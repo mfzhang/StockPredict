@@ -397,7 +397,7 @@ def train_SdA(dataset=None, hidden_layers_sizes=[1000, 1000, 1000], corruption_l
                 break
 
     # print sda.get_prediction([test_set_x.eval()[0]])
-    pdb.set_trace()
+
     print test_score
     return test_score
     

@@ -20,7 +20,7 @@ from Nikkei import Nikkei
 class SparseAutoencoder(object):
     
 
-    def __init__(self, input=None, n_visible=784, n_hidden=500, sp_penalty=0.03, p=0.05, beta=0., weight_reg=0.001,
+    def __init__(self, input=None, n_visible=784, n_hidden=500, sp_penalty=0.03, p=0.05, beta=0., weight_reg=0.,
                  W=None, bhid=None, bvis=None, params = None):
         """
         Initialize the dA class by specifying the number of visible units (the

@@ -153,6 +153,7 @@ class Nikkei():
         """
         self.phase2_input_size = model.n_hidden
 
+
         for year in self.raw_data.keys():
             print year
             if year not in self.unified:
@@ -162,7 +163,7 @@ class Nikkei():
                 # daily_vector = T.max(model.get_hidden_values(self.get_numpy_dense_design(self.raw_data[year][date])), axis=0).eval()
 
                 daily_vector = np.max(model.get_hidden_values(vectors).eval(), axis=0)
-
+                pdb.set_trace()
                 self.unified[year][date] = daily_vector
                 # pdb.set_trace()
     

@@ -23,7 +23,7 @@ params = {
     'dataset_type' : 'all',
     'STEP1' : {
         'beta' : 1.,
-        'model' : 'sae',
+        'model' : 'sda',
         'n_hidden' : 1000,
         'learning_rate' : 0.05
     },
@@ -44,6 +44,13 @@ params = {
             'epochs' : 50
         }
     }
+}
+
+model_dirs = {
+    'STEP1' : '%s/%s/h%d_lr%f_b%f.%s.params' % (default_model_dir, 'STEP1', params['STEP1']['n_hidden'], params['STEP1']['learning_rate'], params['STEP1']['beta'], params['STEP1']['model']),
+    'STEP2' : '%s/%s/h%d_lr%f_b%f.%s' % (default_model_dir, 'STEP2', params['STEP1']['n_hidden'], params['STEP1']['learning_rate'], params['STEP1']['beta'], params['STEP1']['model']),
+    'STEP3' : '%s/%s/%sh%d_lr%f_b%f.%s' % (default_model_dir, 'STEP3', params['STEP3']['brandcode'], params['STEP1']['n_hidden'], params['STEP1']['learning_rate'], params['STEP1']['beta'], params['STEP1']['model']),
+    'STEP4' : '%s/%s/%s' % (default_model_dir, 'STEP4', 'sda.pkl')
 }
 
 
@@ -151,12 +158,7 @@ def predict(dataset):
         finetune_epochs=params['STEP4']['finetune']['epochs']
     )
 
-def run_step234(n_hidden=100, learning_rate=0.1):
-    params['STEP1']['n_hidden'] = n_hidden
-    params['STEP1']['learning_rate'] = learning_rate
-    unify_kijis(dataset)
-    unify_stockprices(dataset)
-    predict(dataset)
+
 
 ##############
 ###  Main  ###

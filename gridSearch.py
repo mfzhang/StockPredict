@@ -13,11 +13,12 @@ import run
 default_model_dir = '/home/fujikawa/StockPredict/src/deeplearning/experiment/Model'
 
 params = {
+    # 'dataset_type' : 'chi2_selected',
     'dataset_type' : 'all',
     'STEP1' : {
-        'beta' : 3,
+        'beta' : 0,
         'model' : 'sae',
-        'n_hidden' : 1000,
+        'n_hidden' : 5000,
         'learning_rate' : 0.05
     },
     'STEP3' : {
@@ -40,10 +41,10 @@ params = {
 }
 
 ###   grid searchのパラメータ格納
-params['STEP3']['brandcode'] = ['0101', '7203', '4324', '9984', '9433', ]
+params['STEP3']['brandcode'] = ['0101', '7203', '4324', '9984', '9433']
 params['STEP4']['hidden_layers_sizes'] = [
-    [params['STEP1']['n_hidden'], params['STEP1']['n_hidden'] / 2, params['STEP1']['n_hidden'] / 2],
-    [params['STEP1']['n_hidden'] * 1.5, params['STEP1']['n_hidden'], params['STEP1']['n_hidden']]
+    [params['STEP1']['n_hidden'], params['STEP1']['n_hidden'] / 2],
+    [params['STEP1']['n_hidden'] * 1.5, params['STEP1']['n_hidden']]
 ]
 params['STEP4']['pretrain'] = {
     'batch_size' : [50, 100],
@@ -73,6 +74,8 @@ def reload_model_dirs(brandcode):
         'STEP4' : '%s/%s/%s' % (default_model_dir, 'STEP4', 'sda.pkl'),
         'STEP4_logs' : '%s/%s/%sh%d_lr%f_b%f.%s.log' % (default_model_dir, 'STEP4_logs', brandcode, params['STEP1']['n_hidden'], params['STEP1']['learning_rate'], params['STEP1']['beta'], params['STEP1']['model'])
     }
+    if params['dataset_type'] == 'chi2_selected':
+        model_dirs['STEP4_logs'] = default_model_dir + '/STEP4_logs/baseline_chi2_selected'
     return model_dirs
 
 def reguralize_data(dataset):
@@ -90,8 +93,13 @@ if __name__ == '__main__':
     i = 0
     for brandcode in params['STEP3']['brandcode']:
         model_dirs = reload_model_dirs(brandcode)
-        dataset = cPickle.load(open(model_dirs['STEP3']))
-        reguralize_data(dataset)
+        dataset = None
+        if params['dataset_type'] == 'all':
+            dataset = cPickle.load(open(model_dirs['STEP3']))
+            reguralize_data(dataset)
+        else:
+            dataset = Nikkei(dataset_type=params['dataset_type'], brandcode=brandcode)
+            dataset.unify_stockprices(dataset.raw_data[brandcode])
         for hidden_layers_sizes in params['STEP4']['hidden_layers_sizes']:
             for batch_size_pretrain in params['STEP4']['pretrain']['batch_size']:
                 for learning_rate_pretrain in params['STEP4']['pretrain']['learning_rate']:

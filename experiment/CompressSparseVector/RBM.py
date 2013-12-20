@@ -21,7 +21,7 @@ class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
     def __init__(self, input=None, n_visible=784, n_hidden=500, \
         W=None, hbias=None, vbias=None, numpy_rng=None,
-        theano_rng=None):
+        theano_rng=None, params=None):
         """
         RBM constructor. Defines the parameters of the model along with
         basic operations for inferring hidden from visible (and vice-versa),
@@ -45,6 +45,22 @@ class RBM(object):
         :param vbias: None for standalone RBMs or a symbolic variable
         pointing to a shared visible units bias
         """
+
+        numpy_rng = numpy.random.RandomState(123)
+        if params != None:
+            W = theano.shared(params['W'], name='W', borrow=True)
+            hbias = theano.shared(params['hbias'], name='hbias', borrow=True)
+            vbias = theano.shared(params['vbias'], name='vbias', borrow=True)
+            self.n_visible = params['n_visible']
+            self.n_hidden = params['n_hidden']
+            self.epoch = params['epoch']
+            theano_rng = params['theano_rng']
+
+        else:
+            self.n_visible = n_visible
+            self.n_hidden = n_hidden
+            self.epoch = 0
+            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 
         self.n_visible = n_visible
         self.n_hidden = n_hidden
@@ -310,10 +326,25 @@ class RBM(object):
 
 
         return cross_entropy
+    def output_params(self):
+        W = numpy.asarray(self.W.get_value())
+        hbias = numpy.asarray(self.hbias.get_value())
+        vbias = numpy.asarray(self.vbias.get_value())
+        params = {
+            'W' : W,
+            'hbias' : hbias,
+            'vbias' : vbias,
+            'n_visible' : self.n_visible,
+            'n_hidden' : self.n_hidden,
+            'epoch' : self.epoch,
+            'theano_rng' : self.theano_rng
+
+        }
+        return params
 
 
-def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=100,
-             n_chains=20, n_samples=10, outdir=''):
+def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=50,
+             n_chains=1, n_samples=10, outdir='', k=1):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
 
@@ -341,7 +372,7 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
 
     
     
-
+    model.k = k
     # compute number of minibatches for training, validation and testing
     # n_train_batches = datasets.get_train_data(type='theano_dense').get_value(borrow=True).shape[0] / batch_size
     n_train_batches = dataset.phase1['train'].get_value(borrow=True).shape[0] / batch_size
@@ -362,7 +393,7 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
 
     # get the cost and the gradient corresponding to one step of CD-15
     cost, updates = model.get_cost_updates(lr=learning_rate,
-                                         persistent=persistent_chain, k=15)
+                                         persistent=None, k=k)
 
     #################################
     #     Training the RBM          #
@@ -406,16 +437,33 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
         for batch_index in xrange(n_train_batches):
             print '%s   epoch : %d, batch : %d, cost : %f, sparsity: %s' % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), str(T.mean(model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1]).eval()))
             mean_cost += [trainer(batch_index)]
-        f_out = open(outdir, 'w')
-        f_out.write(cPickle.dumps(model))
-        f_out.close()
-        cPickle.dumps(model)
+        model.epoch += 1
+        params = model.output_params()
+        while(True):
+            try:
+                f_out = open(outdir, 'w')
+                f_out.write(cPickle.dumps(params, 1))
+                f_out.close()
+                break
+            except:
+                print 'File could not be written...'
+                pdb.set_trace()
+        # f_out = open(outdir, 'w')
+        # f_out.write(cPickle.dumps(model))
+        # f_out.close()
+        # cPickle.dumps(model)
         # print 'Training epoch %d, cost is ' % epoch, numpy.mean(mean_cost)
 
-    f_out = open(outdir, 'w')
-    f_out.write(cPickle.dumps(model))
-    f_out.close()
-    cPickle.dumps(model)
+    while(True):
+        try:
+            f_out = open(outdir, 'w')
+            f_out.write(cPickle.dumps(params, 1))
+            f_out.close()
+            break
+        except:
+            print 'File could not be written...'
+            pdb.set_trace()
+    
     end_time = time.clock()
 
     pretraining_time = (end_time - start_time) - plotting_time

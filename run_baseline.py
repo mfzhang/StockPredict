@@ -6,11 +6,11 @@ import pdb
 params = {
     'dataset_type' : 'chi2_selected',
     'STEP3' : {
-        'brandcode' : '0101'
+        'brandcode' : '7203'
     },
     'STEP4' : {
-        'corruption_levels' : [.1, .2, .3],
-        'hidden_layers_sizes' : [1000, 1000, 1000],
+        'corruption_levels' : [.2, .3],
+        'hidden_layers_sizes' : [1000, 1000],
         'pretrain' : {
             'batch_size' : 20,
             'learning_rate' : 1e-2,
@@ -54,4 +54,3 @@ if __name__ == '__main__':
     dataset = Nikkei(dataset_type=params['dataset_type'], brandcode=params['STEP3']['brandcode'])
     unify_stockprices(dataset)
     predict(dataset)
-    pdb.set_trace()
