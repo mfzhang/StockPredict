@@ -1,9 +1,9 @@
 # coding: utf-8
 import json, codecs, numpy, cPickle, gzip, utils, datetime
-bow_dic = json.load(codecs.open('/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/threshold100_-kigou-joshi-jodoushi-namedentity_heuristics.dic', 'r', 'utf-8'))
-resdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/all.feature'
+bow_dic = json.load(codecs.open('/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/chi2-result-unified.dic', 'r', 'utf-8'))
+resdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset'
 #hadoop_res = open('sample/bow-feature')
-hadoop_res = open('/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-feature/threshold100_small_proposed.bowfeature')
+hadoop_res = open('/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-feature/chi2-unified.bowfeature')
 lines = hadoop_res.readlines()
 vectors = {}
 

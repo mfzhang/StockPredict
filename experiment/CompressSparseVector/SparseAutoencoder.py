@@ -20,7 +20,7 @@ from Nikkei import Nikkei
 class SparseAutoencoder(object):
     
 
-    def __init__(self, input=None, n_visible=784, n_hidden=500, sp_penalty=0.03, p=0.05, beta=0., weight_reg=0.001,
+    def __init__(self, input=None, n_visible=784, n_hidden=500, sp_penalty=0.03, p=0.02, beta=0., weight_reg=0.001,
                  W=None, bhid=None, bvis=None, params = None):
         """
         Initialize the dA class by specifying the number of visible units (the
@@ -107,8 +107,8 @@ class SparseAutoencoder(object):
             # converted using asarray to dtype
             # theano.config.floatX so that the code is runable on GPU
             initial_W = numpy.asarray(numpy_rng.uniform(
-                      low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
-                      high=4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                      low=-1 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                      high=1 * numpy.sqrt(6. / (n_hidden + n_visible)),
                       size=(n_visible, n_hidden)), dtype=theano.config.floatX)
             W = theano.shared(value=initial_W, name='W', borrow=True)
 
@@ -201,16 +201,16 @@ class SparseAutoencoder(object):
         
         def cross_entropy(x, z):
             return - T.sum(self.x * T.log(z) + (1 - self.x) * T.log(1 - z), axis=1)
-        def regularization():
-            return 0.5 * T.sum(self.W ** 2)
-        def KL_divergence(p, p_hat):
+        def l2():
+            return self.beta * T.sum(self.W ** 2)
+        def KL(p, p_hat):
             # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-            return T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
+            return self.beta * 10000 * T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
 
         p_hat = T.mean( y, axis = 1 )
         cost = cross_entropy(self.x, z)
-        cost += self.weight_reg * regularization()
-        cost += self.beta * KL_divergence(self.p, p_hat)
+        cost += l2()
+        cost += KL(self.p, p_hat)
         cost = T.mean(cost)
 
         # compute the gradients of the cost of the `dA` with respect
@@ -300,7 +300,7 @@ def train_sae(input=None, model=None, dataset=None, learning_rate=1e-2, training
     # sae = SparseAutoencoder(numpy_rng=rng, theano_rng=theano_rng, input=x,
     #         n_visible=dataset.phase1_input_size, n_hidden=n_hidden)
 
-    cost, updates = model.get_cost_updates(corruption_level=0.3,
+    cost, updates = model.get_cost_updates(corruption_level=0.8,
                                         learning_rate=learning_rate)
 
     trainer = theano.function([index], cost, updates=updates,
@@ -313,16 +313,32 @@ def train_sae(input=None, model=None, dataset=None, learning_rate=1e-2, training
     ############
     print 'write file: ' + outdir
     # go through training epochs
+    def l2():
+        return model.beta * T.sum(model.W ** 2).eval()
+    def KL(p, p_hat):
+        # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
+        return 10000 * model.beta * numpy.sum((p * numpy.log(p / p_hat)) + ((1 - p) * numpy.log((1 - p) / (1 - p_hat))))
 
     for epoch in xrange(training_epochs):
         # go through trainng set
         c = []
+        previous_cost = 0
         for batch_index in xrange(n_train_batches):
-            print '%s   epoch : %d, batch : %d, cost : %f, sparsity: %f, output: %s' % (str(datetime.datetime.now()), model.epoch, batch_index, numpy.mean(c), T.mean(model.get_hidden_values(dataset.get_batch_design(0, 100, dataset.phase1['valid']))).eval(), outdir.split('/')[len(outdir.split('/')) - 1])
-            # print T.mean(sae.get_hidden_values(dataset.get_batch_design(0, 100, dataset.valid))).eval()
+            test_propup = model.get_hidden_values(dataset.get_batch_design(0, 100, dataset.phase1['valid'])).eval()
+            msg = ('%s   epoch : %d, batch : %d, cost : %.2f, cost diff: %.3f, l2: %.2f, KL: %.2f, sparsity: %.2f, max-min: %.2f, std: %.2f, output: %s'
+                  % (str(datetime.datetime.now()), model.epoch, batch_index, numpy.mean(c), numpy.mean(c) - previous_cost,
+                    l2(), float(KL(0.02, test_propup.mean())),
+                    test_propup.mean(), (test_propup.max(axis=0) - test_propup.min(axis=0)).mean(), 
+                    test_propup.std(axis=0).mean(), outdir.split('/')[len(outdir.split('/')) - 1]))
+            print msg
+            # sys.stdout.write("\r%s" % msg)
+            # sys.stdout.flush()
+            # # print T.mean(sae.get_hidden_values(dataset.get_batch_design(0, 100, dataset.valid))).eval()
             c.append(trainer(batch_index))
+            previous_cost = numpy.mean(c)
         model.epoch += 1
         params = model.output_params()
+        print
         while(True):
             try:
                 f_out = open(outdir, 'w')

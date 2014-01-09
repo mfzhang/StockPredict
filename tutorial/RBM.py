@@ -21,7 +21,7 @@ class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
     def __init__(self, input=None, n_visible=784, n_hidden=500, \
         W=None, hbias=None, vbias=None, numpy_rng=None,
-        theano_rng=None, params=None, reg_weight=0):
+        theano_rng=None, params=None):
         """
         RBM constructor. Defines the parameters of the model along with
         basic operations for inferring hidden from visible (and vice-versa),
@@ -48,10 +48,7 @@ class RBM(object):
 
         numpy_rng = numpy.random.RandomState(123)
         theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
-        self.reg_weight = reg_weight
         if params != None:
-            if 'beta' in params:
-                self.reg_weight = params['beta']
             W = theano.shared(params['W'], name='W', borrow=True)
             hbias = theano.shared(params['hbias'], name='hbias', borrow=True)
             vbias = theano.shared(params['vbias'], name='vbias', borrow=True)
@@ -61,11 +58,10 @@ class RBM(object):
             # theano_rng = params['theano_rng']
 
         else:
-
             self.n_visible = n_visible
             self.n_hidden = n_hidden
             self.epoch = 0
-        print self.reg_weight
+
         if numpy_rng is None:
             # create a number generator
             numpy_rng = numpy.random.RandomState(1234)
@@ -86,6 +82,7 @@ class RBM(object):
                       dtype=theano.config.floatX)
             # theano shared variables for weights and biases
             W = theano.shared(value=initial_W, name='W', borrow=True)
+
         if hbias is None:
             # create shared variable for hidden units bias
             hbias = theano.shared(value=numpy.zeros(n_hidden,
@@ -238,28 +235,16 @@ class RBM(object):
         # not that we only need the sample at the end of the chain
         chain_end = nv_samples[-1]
 
-        def l1():
-            return self.reg_weight * T.sum(T.abs(self.W))
-        def l2():
-            return self.reg_weight * T.sum(self.W ** 2)
-        def KL_divergence(p, p_hat):
-            # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-            return 10000 * self.reg_weight * T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
-        
-        cost = T.mean(self.free_energy(self.input)) - T.mean(self.free_energy(chain_end))
-        cost += l2() 
-        cost += KL_divergence(0.02, T.mean(ph_mean))
+        cost = T.mean(self.free_energy(self.input)) - T.mean(
+            self.free_energy(chain_end))
         # We must not compute the gradient through the gibbs sampling
         gparams = T.grad(cost, self.params, consider_constant=[chain_end])
 
         # constructs the update dictionary
         for gparam, param in zip(gparams, self.params):
-            # if i == 0:
-            # # make sure that the learning rate is of the right dtype
-            #     param_fixed = param - gparam * T.cast(lr, dtype=theano.config.floatX)
-            #     param_fixed = (param_fixed + abs(param_fixed)) / 2
-            #     updates[param] = param_fixed
-            updates[param] = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+            # make sure that the learning rate is of the right dtype
+            updates[param] = param - gparam * T.cast(lr,
+                                                    dtype=theano.config.floatX)
         if persistent:
             # Note that this works only if persistent is a shared variable
             updates[persistent] = nh_samples[-1]
@@ -343,21 +328,19 @@ class RBM(object):
         hbias = numpy.asarray(self.hbias.get_value())
         vbias = numpy.asarray(self.vbias.get_value())
         # theano_rng = numpy.asarray(self.theano_rng, dtype=numpy.float64)
-        # pdb.set_trace()
         params = {
             'W' : W,
             'hbias' : hbias,
             'vbias' : vbias,
             'n_visible' : self.n_visible,
             'n_hidden' : self.n_hidden,
-            'epoch' : self.epoch,
-            'beta' : self.reg_weight
+            'epoch' : self.epoch
             # 'theano_rng' : self.theano_rng
         }
         return params
 
 
-def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=100,
+def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=50,
              n_chains=1, n_samples=10, outdir='', k=1):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
@@ -441,59 +424,38 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
     plotting_time = 0.
     start_time = time.clock()
 
-    def l2():
-        return model.reg_weight * T.sum(model.W ** 2).eval()
-    def KL(p, p_hat):
-        # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-        return 10000 * model.reg_weight * numpy.sum((p * numpy.log(p / p_hat)) + ((1 - p) * numpy.log((1 - p) / (1 - p_hat))))
+    
 
     # go through training epochs
     for epoch in xrange(training_epochs):
 
         # go through the training set
         mean_cost = []
-        previous_cost = 0
         for batch_index in xrange(n_train_batches):
-            # pdb.set_trace()
+            # print '%s   epoch : %d, batch : %d, cost : %.2f, sparsity: %.2f, std: %.2f' % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), float(T.mean(model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1]).eval()), float(T.mean(T.std(model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1], axis=0)).eval()))
             params = model.output_params()
+            # pdb.set_trace()
+            # while(True):
+            #     try:
+            #         f_out = open(outdir, 'w')
+            #         f_out.write(cPickle.dumps(params, 1))
+            #         f_out.close()
+            #         break
+            #     except:
+            #         print 'File could not be written...'
+            #         pdb.set_trace()
             mean_cost += [trainer(batch_index)]
-            test_propup = model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1].eval()
-            msg = ('%s   epoch : %d, batch : %d, cost : %.2f, cost diff: %.3f, l2: %.2f, KL: %.2f, sparsity: %.2f, max-min: %.2f, std: %.2f, output: %s'
-                  % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), numpy.mean(mean_cost) - previous_cost,
-                    l2(), float(KL(0.02, test_propup.mean())),
-                    test_propup.mean(), (test_propup.max(axis=0) - test_propup.min(axis=0)).mean(), 
-                    test_propup.std(axis=0).mean(), outdir.split('/')[len(outdir.split('/')) - 1]))
-            sys.stdout.write("\r%s" % msg)
-            sys.stdout.flush()
             
-            previous_cost = numpy.mean(mean_cost)
+            print '%s   epoch : %d, batch : %d, cost : %.2f, sparsity: %.2f, max-min: %.2f' % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), float(T.mean(model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1]).eval()), float(T.mean(T.max(model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1], axis=0) - T.min(model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1], axis=0)).eval()))
+            
         model.epoch += 1
         params = model.output_params()
-        print
-        while(True):
-            try:
-                f_out = open(outdir, 'w')
-                f_out.write(cPickle.dumps(params, 1))
-                f_out.close()
-                break
-            except:
-                print 'File could not be written...'
-                pdb.set_trace()
+        
         # f_out = open(outdir, 'w')
         # f_out.write(cPickle.dumps(model))
         # f_out.close()
         # cPickle.dumps(model)
         # print 'Training epoch %d, cost is ' % epoch, numpy.mean(mean_cost)
-
-    while(True):
-        try:
-            f_out = open(outdir, 'w')
-            f_out.write(cPickle.dumps(params, 1))
-            f_out.close()
-            break
-        except:
-            print 'File could not be written...'
-            pdb.set_trace()
     
     end_time = time.clock()
 
