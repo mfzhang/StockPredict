@@ -10,6 +10,7 @@ from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/all.wordidset"
 wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
+wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
 wordidset_chi2_selected = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2.wordidset"
 
 ##  株価 / 辞書データに関するディレクトリ  
@@ -204,6 +205,8 @@ class Nikkei():
         :param model_type (string) : [rbm / sae]
 
         """
+        
+        
         self.phase2_input_size = model.n_hidden
         # x = T.matrix()
         # f = theano.function([x], model.propup(x)[1])
@@ -218,20 +221,24 @@ class Nikkei():
                 bar.update(i)
                 vectors = self.get_numpy_dense_design(self.raw_data[year][date])
                 vectors_baseline = np.max(vectors, axis=0)
-                # if model_type == 'rbm':
-                #     daily_vector = np.max(model.propup(vectors)[1].eval(), axis=0)
-                #     daily_vector_baseline = model.propup(vectors_baseline)[1].eval()
+                if model_type == 'rbm':
+                    # pdb.set_trace()
+                    daily_vector = model.get_maxpool(vectors)
+                    # self.unified[year][date] = model.propup(vectors)[1]
+                    # daily_vector = np.array(np.max(model.propup(vectors)[1].eval(), axis=0))
+                    daily_vector_baseline = model.get_propup_vector(vectors_baseline)
                 # else:
-                #     daily_vector = np.max(model.get_hidden_values(vectors).eval(), axis=0)
-                #     daily_vector_baseline = model.get_hidden_values(vectors_baseline).eval()
-                # self.baseline[year][date] = daily_vector_baseline
-                self.baseline_original[year][date] = vectors_baseline
-                # self.unified[year][date] = daily_vector
+                    # daily_vector = np.max(model.get_hidden_values(vectors).eval(), axis=0)
+                    # daily_vector_baseline = np.array(model.get_hidden_values(vectors_baseline).eval())
                 # pdb.set_trace()
-        self.raw_data = None
-        self.trainset, self.validset, self.testset = [], [], []
-        self.phase1 = {}
-    
+                self.baseline[year][date] = daily_vector_baseline
+                self.baseline_original[year][date] = vectors_baseline
+                self.unified[year][date] = daily_vector
+        #if experiment_type == 'baseline':
+            #self.raw_data = None
+            #self.trainset, self.validset, self.testset = [], [], []
+            #self.phase1 = {}
+        pdb.set_trace()
     def get_theano_design(self, array):
         return theano.shared(array)
 

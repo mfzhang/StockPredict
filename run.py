@@ -29,16 +29,12 @@ default_model_dir = '/home/fujikawa/StockPredict/src/deeplearning/experiment/Mod
 dataset_type = 'test' # ['all' / 'chi2_selected']
 
 params = {
-    'experiment_type' : 'baseline',
+    'experiment_type' : 'proposed',
     'STEP1' : {
         'beta' : 1.,
         'model' : 'sae',
         'n_hidden' : 1000,
         'learning_rate' : 0.05
-    },
-    'STEP2' : {
-        # 'experiment_type' : 'baseline'
-        'experiment_type' : 'proposed'
     },
     'STEP3' : {
         'brandcode' : '0101'
@@ -46,6 +42,7 @@ params = {
     'STEP4' : {
         'model' : 'sda',
         'corruption_levels' : [.3, .3, .3],
+        'k' : 1,
         'hidden_layers_sizes' : [2500, 2500],
         'pretrain' : {
             'batch_size' : 50,
@@ -95,29 +92,29 @@ def msg_loop(stdscr):
         stdscr.addstr(msg)
         x = int(stdscr.getstr())
         if 0 < x < num_max:
+            # curses.flushinp()
+            # stdscr.clear()
+            # msg = '**  ' + initial_msg[x] + '\n\n'
+            # msg += 'このステップから後のいくつのステップを実行しますか？\n'
+            # msg += '0: cancel, 1~: number of steps\n'
+            # stdscr.addstr(msg)
+            # y = int(stdscr.getstr())
+
+            # if y > 0:
             curses.flushinp()
             stdscr.clear()
             msg = '**  ' + initial_msg[x] + '\n\n'
-            msg += 'このステップから後のいくつのステップを実行しますか？\n'
-            msg += '0: cancel, 1~: number of steps\n'
+            msg = json.dumps(model_dirs, indent=2) + '\n'
+            msg += '以下のファイルが上書きされる可能性があります。実行しますか？ [ y / n ]\n'
+            for path in model_dirs.values():
+                if os.path.exists(path):
+                    msg += path + '\n'
             stdscr.addstr(msg)
-            y = int(stdscr.getstr())
-
-            if y > 0:
-                curses.flushinp()
-                stdscr.clear()
-                msg = '**  ' + initial_msg[x] + ' ~ ' + str(y) + 'step\n\n'
-                msg = json.dumps(model_dirs, indent=2) + '\n'
-                msg += '以下のファイルが上書きされる可能性があります。実行しますか？ [ y / n ]\n'
-                for path in model_dirs.values():
-                    if os.path.exists(path):
-                        msg += path + '\n'
-                stdscr.addstr(msg)
-                z = stdscr.getstr()
-                if z == '' or z == 'y':
-                    break
-                curses.flushinp()
-                stdscr.clear()
+            z = stdscr.getstr()
+            if z == '' or z == 'y':
+                break
+            curses.flushinp()
+            stdscr.clear()
         else:
             curses.flushinp()
             stdscr.clear()
@@ -128,7 +125,7 @@ def msg_loop(stdscr):
     stdscr.clear()
     if x == 1:
         while True:
-            msg = '**  ' + initial_msg[x] + ' ~ ' + str(y) + 'step\n\n'
+            msg = '**  ' + initial_msg[x] + '\n\n'
             msg += '以下を選択して下さい。\n'
             msg += '1: さいしょからはじめる、2: つづきからはじめる\n'
             stdscr.addstr(msg)
@@ -140,14 +137,14 @@ def msg_loop(stdscr):
             else:
                 msg = '  ** 注 **     1 ~ 2 までの値を入力して下さい。\n'
                 stdscr.addstr(msg)
-    if x in [2, 3]:
+    if x == 3:
         while True:
-            msg = '**  ' + initial_msg[x] + ' ~ ' + str(y) + 'step\n\n'
+            msg = '**  ' + initial_msg[x] + '\n\n'
             msg += '\n'.join(labeltype_msg) + '\n'
             stdscr.addstr(msg)
             l = int(stdscr.getstr())
             stdscr.clear()
-            msg = '**  ' + initial_msg[x] + ' ~ ' + str(y) + 'step\n'
+            msg = '**  ' + initial_msg[x] + '\n'
             msg += '**  ' + labeltype_msg[l] + '\n\n'
             msg += '以下から予測モデルに利用するモデルを選択して下さい．\n'
             msg += '1: SdA_regression, 2: DBN_regression, 3: SdA_RNN\n'
@@ -216,7 +213,7 @@ def unify_kijis(dataset):
     model = load_model(input=x, params_dir=model_dirs['STEP1'], model_type=params['STEP1']['model'])
     # model = cPickle.load(open(model_dirs['STEP1']))
     ###########################################################
-    dataset.unify_kijis(model, params['STEP1']['model'], params['STEP2']['experiment_type'])
+    dataset.unify_kijis(model, params['STEP1']['model'], params['experiment_type'])
     out = open(model_dirs['STEP2'], 'w')
     out.write(cPickle.dumps(dataset))
     return dataset
@@ -270,22 +267,26 @@ def predict(dataset, model, brandcodes=['0101'], label_type=1):
     dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes, dataset_type=params['experiment_type'])
     reguralize_data(dataset, brandcodes)
     change_brand(dataset, '0101')
-    pretrain_model = model.pretrain(
-        dataset=dataset, 
-        hidden_layers_sizes=params['STEP4']['hidden_layers_sizes'],
-        pretrain_lr=params['STEP4']['pretrain']['learning_rate'],
-        pretrain_batch_size=params['STEP4']['pretrain']['batch_size'],
-        pretrain_epochs=params['STEP4']['pretrain']['epochs']
-    )
+    pretrain_params = {
+        'dataset' : dataset, 
+        'hidden_layers_sizes' : params['STEP4']['hidden_layers_sizes'],
+        'pretrain_lr' : params['STEP4']['pretrain']['learning_rate'],
+        'pretrain_batch_size' : params['STEP4']['pretrain']['batch_size'],
+        'pretrain_epochs' : params['STEP4']['pretrain']['epochs'],
+        'corruption_levels' : params['STEP4']['corruption_levels'],
+        'k' : params['STEP4']['k']
+    }
+    pretrain_model = model.pretrain(pretrain_params)
     pretrain_params = get_model_params(pretrain_model)
     while(1):
-        finetune_model, best_validation_loss, test_score, best_epoch = model.finetune(
-            dataset=dataset, 
-            model = pretrain_model,
-            finetune_lr=params['STEP4']['finetune']['learning_rate'],
-            finetune_batch_size=params['STEP4']['finetune']['batch_size'],
-            finetune_epochs=params['STEP4']['finetune']['epochs']
-        )
+        finetune_params = {
+            'dataset' : dataset,
+            'model' : pretrain_model,
+            'finetune_lr' : params['STEP4']['finetune']['learning_rate'],
+            'finetune_batch_size' : params['STEP4']['finetune']['batch_size'],
+            'finetune_epochs' : params['STEP4']['finetune']['epochs']
+        }
+        finetune_model, best_validation_loss, test_score, best_epoch = model.finetune(finetune_params)
         pdb.set_trace()
         set_model_params(pretrain_model, pretrain_params)
 
@@ -321,7 +322,7 @@ if __name__ == '__main__':
     curses.wrapper(msg_loop)
     sys.stdout = os.fdopen(0, 'w', 0)
 
-    print initial_msg[x] + ' ~ ' + str(y) + 'step'
+    print initial_msg[x]
 
 ############################################################
 #####          PHASE1: 複数記事の圧縮表現の獲得             #####
@@ -330,8 +331,7 @@ if __name__ == '__main__':
 ############################################################
 
     dataset = None
-    if x <= 1 and y > 0:
-        y -= 1
+    if x == 1:
         if i == 1:
             build_CompressModel()
         elif i == 2:
@@ -342,8 +342,7 @@ if __name__ == '__main__':
 ###  STEP 2: 前のステップで訓練された圧縮モデルを用いた複数記事の圧縮表現の獲得  ###
 ######################################################################
 
-    if x <= 2 and y > 0:
-        y -= 1
+    if x == 2:
         dataset = unify_kijis(dataset)
 
 ######################################################################
@@ -353,8 +352,7 @@ if __name__ == '__main__':
 ######################################################################
 
 
-    if x <= 3 and y > 0:
-        y -= 1
+    if x == 3:
         model = ''
         print labeltype_msg[l]
         if m == 1:

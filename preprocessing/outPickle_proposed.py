@@ -1,9 +1,9 @@
 # coding: utf-8
 import json, codecs, numpy, cPickle, gzip, utils, datetime
 bow_dic = json.load(codecs.open('/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/chi2-result-unified.dic', 'r', 'utf-8'))
-resdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset'
+resdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset'
 #hadoop_res = open('sample/bow-feature')
-hadoop_res = open('/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-feature/chi2-unified.bowfeature')
+hadoop_res = open('/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-feature/chi2-unified-sentence.bowfeature')
 lines = hadoop_res.readlines()
 vectors = {}
 
@@ -25,14 +25,15 @@ for line in lines:
 	# if utils.Progress.get_progress(n, len(lines) * 2):
 	# 	print '\t',
 	# 	utils.Progress.print_progress(n, len(lines))
-	date, kiji_id, wordid_list = line.strip().split('\t')
+	date, kiji_id, sentence_num, wordid_list = line.strip().split('\t')
 	year, month, day = date.strip().split('-')
 	dt = datetime.date(int(year), int(month), int(day))
 	if int(year) not in vectors:
 		vectors[int(year)] = {}
 	if dt not in vectors[int(year)]:
 		vectors[int(year)][dt] = []
-	vectors[int(year)][dt].append(map(int, wordid_list.split(',')))
+	if len(wordid_list.split(',')) > 1:
+		vectors[int(year)][dt].append(map(int, wordid_list.split(',')))
 	# line = hadoop_res.readline()
 	
 # import pdb; pdb.set_trace()

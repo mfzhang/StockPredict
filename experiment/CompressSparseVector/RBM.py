@@ -1,7 +1,7 @@
 # coding: utf-8
 
 # general library imports
-import cPickle, gzip, time, os, sys, pdb, json, datetime
+import cPickle, gzip, time, os, sys, pdb, json, datetime, curses
 import numpy
 import scipy.sparse
 # import theano
@@ -110,6 +110,14 @@ class RBM(object):
         # **** WARNING: It is not a good idea to put things in this list
         # other than shared variables created in this function.
         self.params = [self.W, self.hbias, self.vbias]
+        
+        matrix = T.matrix()
+        vector = T.vector()        
+        self.get_propup_vector = theano.function([vector], self.propup(vector)[1])
+        self.get_propup_matrix = theano.function([matrix], self.propup(matrix)[1])
+        matrix_maxpool = T.matrix()
+        self.get_maxpool = theano.function([matrix_maxpool], T.max(self.propup(matrix_maxpool)[1], axis=0))
+        # self.get_maxpool = numpy.max(self.get_propup_matrix, axis=0)
 
     def free_energy(self, v_sample):
         ''' Function to compute the free energy '''
@@ -238,17 +246,17 @@ class RBM(object):
         # not that we only need the sample at the end of the chain
         chain_end = nv_samples[-1]
 
-        def l1():
-            return self.reg_weight * T.sum(T.abs(self.W))
-        def l2():
-            return self.reg_weight * T.sum(self.W ** 2)
-        def KL_divergence(p, p_hat):
-            # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-            return 10000 * self.reg_weight * T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
-        
+        l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
         cost = T.mean(self.free_energy(self.input)) - T.mean(self.free_energy(chain_end))
-        cost += l2() 
-        cost += KL_divergence(0.02, T.mean(ph_mean))
+        # cost += self.reg_weight * 0.1 * T.sum(T.mean(T.nnet.sigmoid(T.dot(self.input, self.W) + self.hbias), axis=0))
+        # cost += self.reg_weight * T.sum(T.mean(T.nnet.sigmoid(T.dot(self.input, self.W) + self.hbias), axis=0) ** 2)
+        # cost += self.reg_weight * 0.5 * T.sum(T.mean(self.propup(self.input)[1], axis=0))
+        cost += l2_w
+        cost += l2_h
+        # cost += 0.001 * self.reg_weight * T.sum((1 - T.max(self.propup(self.input)[1], axis=0)) ** 2)
+        # cost += self.reg_weight * cross_entropy(5e-3, T.mean(T.mean(self.sample_h_given_v(self.input)[2], axis=0)))
+        # cost += l2() 
+        # cost += KL(0.02, T.mean(ph_mean))
         # We must not compute the gradient through the gibbs sampling
         gparams = T.grad(cost, self.params, consider_constant=[chain_end])
 
@@ -271,7 +279,32 @@ class RBM(object):
                                                            pre_sigmoid_nvs[-1])
 
         return monitoring_cost, updates
+    
+    def get_norm_penalty(self, x, isUpdate=True):
 
+        def l1(param):
+            return T.sum(T.abs(param))
+        def l2(param):
+            return T.sum(param ** 2)
+        def l2_a0(param):
+            return T.sum(param ** 2)
+        def KL(p, p_hat):
+            return T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
+
+        # l1_w = l1(self.W)
+        l2_w = self.reg_weight * l2(self.W)
+        l2_h = 0
+        # l1_h = l1(self.get_propup_matrix(x))
+        # if isUpdate == True:
+        #     l2_h = 0
+        #     # l2_h = self.reg_weight * l2(self.propup(x)[1])
+        # else:
+        #     l2_h = 0
+        #     # l2_h = 0 * self.reg_weight * l2(self.get_propup_matrix(x))
+        
+        return l2_w, l2_h
+
+        # l1_h = 
     def get_pseudo_likelihood_cost(self, updates):
         """Stochastic approximation to the pseudo-likelihood"""
 
@@ -357,7 +390,7 @@ class RBM(object):
         return params
 
 
-def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=100,
+def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=200,
              n_chains=1, n_samples=10, outdir='', k=1):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
@@ -441,28 +474,73 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
     plotting_time = 0.
     start_time = time.clock()
 
-    def l2():
-        return model.reg_weight * T.sum(model.W ** 2).eval()
-    def KL(p, p_hat):
-        # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-        return 10000 * model.reg_weight * numpy.sum((p * numpy.log(p / p_hat)) + ((1 - p) * numpy.log((1 - p) / (1 - p_hat))))
-
+    # def l2_w():
+    #     return 0.01 * model.reg_weight * T.sum(model.W ** 2).eval()
+    # def KL(p, p_hat):
+    #     # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
+    #     return 10000 * model.reg_weight * numpy.sum((p * numpy.log(p / p_hat)) + ((1 - p) * numpy.log((1 - p) / (1 - p_hat))))
+    # def cross_entropy(p, q):
+    #     return -q * T.log(q) - (1 - p) * T.log(1 - q)
+    # def l1_h(test_propup):
+    #     return model.reg_weight  * (test_propup.mean(axis=0)).sum()
+    # def l2_h(test_propup):
+    #     return model.reg_weight * (test_propup.mean(axis=0) ** 2).sum()
+    # def max_penalty(test_propup):
+    #     return 0.001 * model.reg_weight * ((1 - test_propup.max(axis=0)) ** 2).sum()
     # go through training epochs
+    x_example = dataset.get_batch_design(0, 2500, dataset.phase1['valid']).eval()
+    # pdb.set_trace()
+
+    # l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
+    print outdir.split('/')[len(outdir.split('/')) - 1]
+
     for epoch in xrange(training_epochs):
 
         # go through the training set
         mean_cost = []
         previous_cost = 0
         for batch_index in xrange(n_train_batches):
+            
             # pdb.set_trace()
-            params = model.output_params()
+            
             mean_cost += [trainer(batch_index)]
-            test_propup = model.propup(dataset.get_batch_design(0, 100, dataset.phase1['valid']))[1].eval()
-            msg = ('%s   epoch : %d, batch : %d, cost : %.2f, cost diff: %.3f, l2: %.2f, KL: %.2f, sparsity: %.2f, max-min: %.2f, std: %.2f, output: %s'
-                  % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), numpy.mean(mean_cost) - previous_cost,
-                    l2(), float(KL(0.02, test_propup.mean())),
-                    test_propup.mean(), (test_propup.max(axis=0) - test_propup.min(axis=0)).mean(), 
-                    test_propup.std(axis=0).mean(), outdir.split('/')[len(outdir.split('/')) - 1]))
+            
+                # msg = '%s   e: %d, b: %d, cost: %.2f'% (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost))
+                # test_propup = model.propup(dataset.get_batch_design(0, 2500, dataset.phase1['valid']))[1].eval()
+                # pre_sigmoid_ph, ph_mean, ph_sample = model.sample_h_given_v(dataset.get_batch_design(0, 100, dataset.phase1['valid']))
+                # msg = ('%s   epoch : %d, batch : %d, cost : %.2f, cost diff: %.3f, l2: %.2f, KL: %.2f, sparsity: %.2f, max-min: %.2f, std: %.2f, output: %s'
+                #       % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), numpy.mean(mean_cost) - previous_cost,
+                #         l2(), float(KL(0.02, test_propup.mean())),
+                #         test_propup.mean(), (test_propup.max(axis=0) - test_propup.min(axis=0)).mean(), 
+                #         test_propup.std(axis=0).mean(), outdir.split('/')[len(outdir.split('/')) - 1]))
+                # pdb.set_trace()
+                # l1 = T.sum(T.mean(T.nnet.sigmoid(T.dot(dataset.get_batch_design(0, 100, dataset.phase1['valid']), model.W) + model.hbias), axis=0))
+                # l2 = T.sum(T.mean(T.nnet.sigmoid(T.dot(dataset.get_batch_design(0, 100, dataset.phase1['valid']), model.W) + model.hbias), axis=0) ** 2)
+                # pdb.set_trace()
+
+                # l1 = model.reg_weight  * (test_propup.mean(axis=0)).sum()
+                # l2= model.reg_weight * (test_propup.mean(axis=0) ** 2).sum()
+                # max_pen= 0.1 * model.reg_weight * ((1 - test_propup.max(axis=0)) ** 2).sum()
+                # pdb.set_trace()
+                
+                # msg = ('%s   e: %d, b: %d, cost: %.2f, m: %.2f, l1: %.2f, wl2: %.2f, sp: %.2f, mm: %.2f-%.2f: %s :output: %s'
+                #       % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), 
+                #         max_penalty(test_propup), l1_h(test_propup), l2_w(),
+                #         test_propup.mean(axis=1).mean(), test_propup.max(axis=0).mean(), test_propup.min(axis=0).mean(),
+                #         str(numpy.histogram(test_propup.mean(axis=0), range=[0,1])[0]),
+                #         outdir.split('/')[len(outdir.split('/')) - 1]))
+
+            msg = '%s e: %d, b: %d, c: %.2f, '% (str(datetime.datetime.now().strftime("%m/%d %H:%M")), epoch, batch_index, numpy.mean(mean_cost))
+            if batch_index % 100 == 0:
+                l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
+                test_propup = model.get_propup_matrix(x_example)
+                # msg += 'l2_w: %.2f, l2_h: %.2f, ' % (float(l2_w.eval()), float(l2_h.eval()))
+                msg += 'l2_w: %.2f, ' % (float(l2_w.eval()))
+                msg += 'sp: %.2f, mm: %.2f~%.2f, ' % (test_propup.mean(axis=1).mean(), test_propup.max(axis=0).mean(), test_propup.min(axis=0).mean())
+                msg += '%s' % str(numpy.histogram(test_propup.mean(axis=0), range=[0,1])[0])
+
+                # print msg
+
             sys.stdout.write("\r%s" % msg)
             sys.stdout.flush()
             
@@ -470,6 +548,7 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
         model.epoch += 1
         params = model.output_params()
         print
+        print outdir.split('/')[len(outdir.split('/')) - 1]
         while(True):
             try:
                 f_out = open(outdir, 'w')

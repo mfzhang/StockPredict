@@ -277,10 +277,21 @@ class SdA(object):
         return train_fn, valid_score, test_score
 
 
-def pretrain(dataset=None, outdir=None, hidden_layers_sizes=[1000, 1000, 1000], corruption_levels = [.1, .2, .3],
-              pretrain_lr=0.01, pretrain_batch_size=20, pretrain_epochs=20,
-              finetune_lr=0.1, finetune_batch_size=10, finetune_epochs=100):
-    
+def pretrain(pretrain_params):
+
+    ############################
+    ###  Setting parameters  ###
+    ############################
+
+    dataset = pretrain_params['dataset']
+    hidden_layers_sizes = pretrain_params['hidden_layers_sizes']
+    pretrain_lr = pretrain_params['pretrain_lr']
+    pretrain_batch_size = pretrain_params['pretrain_batch_size']
+    pretrain_epochs = pretrain_params['pretrain_epochs']
+    corruption_levels = pretrain_params['corruption_levels']
+
+    ############################
+
     train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
     valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
     test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
@@ -334,13 +345,23 @@ def pretrain(dataset=None, outdir=None, hidden_layers_sizes=[1000, 1000, 1000], 
     return model
 
 
-def finetune(dataset=None, model=None, finetune_lr=0.1, finetune_batch_size=10, finetune_epochs=100):
+def finetune(finetune_params):
     
+    ############################
+    ###  Setting parameters  ###
+    ############################
+
+    dataset = finetune_params['dataset']
+    model = finetune_params['model']
+    finetune_lr = finetune_params['finetune_lr']
+    finetune_batch_size = finetune_params['finetune_batch_size']
+    finetune_epochs = finetune_params['finetune_epochs']
+
+    ############################
 
     train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
     valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
     test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
-
     
     ########################
     # FINETUNING THE MODEL #
@@ -422,143 +443,7 @@ def finetune(dataset=None, model=None, finetune_lr=0.1, finetune_batch_size=10, 
     return model, best_validation_loss, test_score, best_epoch
 
 
-def train_SdA(dataset=None, outdir=None, hidden_layers_sizes=[1000, 1000, 1000], corruption_levels = [.3, .3, .3],
-              pretrain_lr=0.01, pretrain_batch_size=20, pretrain_epochs=20,
-              finetune_lr=0.1, finetune_batch_size=10, finetune_epochs=100):
-    
-
-    # train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), T.cast(theano.shared(dataset.phase2['train']['y']), 'int32')
-    # valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), T.cast(theano.shared(dataset.phase2['valid']['y']), 'int32')
-    # test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), T.cast(theano.shared(dataset.phase2['test']['y']), 'int32')
- 
-    train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
-    valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
-    test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
-
-    # compute number of minibatches for training, validation and testing
-    n_train_batches = train_set_x.get_value(borrow=True).shape[0]
-    n_train_batches /= pretrain_batch_size
-
-    # numpy random generator
-    numpy_rng = numpy.random.RandomState(89677)
-    print '... building the model'
-
-    # construct the stacked denoising autoencoder class
-    model = SdA(numpy_rng=numpy_rng, n_ins=train_set_x.get_value().shape[1],
-              hidden_layers_sizes=hidden_layers_sizes,
-              n_outs=1)
-
-    #########################
-    # PRETRAINING THE MODEL #
-    #########################
-
-    print '... getting the pretraining functions'
-    pretraining_fns = model.pretraining_functions(train_set_x=train_set_x,
-                                                batch_size=pretrain_batch_size)
-    # pdb.set_trace()
-    print '... pre-training the model'
-    start_time = time.clock()
-    ## Pre-train layer-wise
-    # pdb.set_trace()
-    for i in xrange(model.n_layers):
-        # go through pretraining epochs
-        for epoch in xrange(pretrain_epochs):
-            # go through the training set
-            c = []
-            for batch_index in xrange(n_train_batches):
-                c.append(pretraining_fns[i](index=batch_index,
-                         corruption=corruption_levels[i],
-                         lr=pretrain_lr))
-            print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-            print numpy.mean(c)
-
-
-    end_time = time.clock()
-
-    print >> sys.stderr, ('The pretraining code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
-    if outdir != None:
-        f_out = open(outdir + '.pretrain', 'w')
-        f_out.write(cPickle.dumps(model, 1))
-        f_out.close()
-    ########################
-    # FINETUNING THE MODEL #
-    ########################
-    n_train_batches = train_set_x.get_value(borrow=True).shape[0]
-    n_train_batches /= pretrain_batch_size
-    # get the training, validation and testing function for the model
-    print '... getting the finetuning functions'
-    train_fn, validate_model, test_model = sda.build_finetune_functions(
-                dataset=dataset, batch_size=finetune_batch_size,
-                learning_rate=finetune_lr)
-
-    print '... finetunning the model'
-    # early-stopping parameters
-    patience = 20 * n_train_batches  # look as this many examples regardless
-    patience_increase = 5.  # wait this much longer when a new best is
-                            # found
-    improvement_threshold = 0.999  # a relative improvement of this much is
-                                   # considered significant
-    validation_frequency = min(n_train_batches, patience / 2)
-                                  # go through this many
-                                  # minibatche before checking the network
-                                  # on the validation set; in this case we
-                                  # check every epoch
-
-    best_params = None
-    best_validation_loss = numpy.inf
-    test_score = 0.
-    start_time = time.clock()
-
-    done_looping = False
-    epoch = 0
-
-    while (epoch < finetune_epochs) and (not done_looping):
-        epoch = epoch + 1
-        for minibatch_index in xrange(n_train_batches):
-            minibatch_avg_cost = train_fn(minibatch_index)
-            iter = (epoch - 1) * n_train_batches + minibatch_index
-
-            if (iter + 1) % validation_frequency == 0:
-                validation_losses = validate_model()
-                this_validation_loss = numpy.mean(validation_losses)
-                print('epoch %i, minibatch %i/%i, validation error %f %%' %
-                      (epoch, minibatch_index + 1, n_train_batches,
-                       this_validation_loss * 100.))
-
-                # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
-
-                    #improve patience if loss improvement is good enough
-                    if (this_validation_loss < best_validation_loss *
-                        improvement_threshold):
-                        patience = max(patience, iter * patience_increase)
-
-                    # save best validation score and iteration number
-                    best_validation_loss = this_validation_loss
-                    best_iter = iter
-
-                    # test it on the test set
-                    test_losses = test_model()
-                    test_score = numpy.mean(test_losses)
-                    print(('     epoch %i, minibatch %i/%i, test error of '
-                           'best model %f %%') %
-                          (epoch, minibatch_index + 1, n_train_batches,
-                           test_score * 100.))
-
-            # if patience <= iter:
-            #     done_looping = True
-            #     break
-
-    # print sda.get_prediction([test_set_x.eval()[0]])
-
-    print test_score
-    # pdb.set_trace()
-    return test_score
-
-    
 
 
 if __name__ == '__main__':
-    train_SdA()
+    pass
