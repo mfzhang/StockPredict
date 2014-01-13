@@ -8,16 +8,16 @@ import json, codecs, cPickle, gzip, datetime, pdb, sys
 
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
 
-wordidset_all = "dataset/chi2-unified.wordidset"
+wordidset_all = "dataset/dataset/chi2-unified.wordidset"
 
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
-# wordidset_chi2_selected = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2.wordidset"
+wordidset_chi2_selected = "dataset/dataset/chi2.wordidset"
 
 ##  株価 / 辞書データに関するディレクトリ  
 
-pricelistdir = 'dataset/pricelist.pkl'
-dicdir = 'dataset/chi2-result-unified.dic'
+pricelistdir = 'dataset/dataset/pricelist.pkl'
+dicdir = 'dataset/dataset/chi2-result-unified.dic'
 
 # pricelistdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/StockPrice/pricelist.pkl'
 # dicdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/chi2-result-unified.dic'
@@ -85,11 +85,11 @@ class Nikkei():
         PHASE1の実験に用いるデータの準備
 
         """
-        for year in self.train_years:
+        for year in self.years['train']:
             self.trainset.extend(self._expandArray(dataset[year].values()))
-        for year in self.valid_years:
+        for year in self.years['valid']:
             self.validset.extend(self._expandArray(dataset[year].values()))
-        for year in self.test_years:
+        for year in self.years['test']:
             self.testset.extend(self._expandArray(dataset[year].values()))
         self.phase1['train'] = self.get_data(self.trainset, type=self.type)
         self.phase1['valid'] = self.get_data(self.validset, type=self.type)
@@ -154,8 +154,8 @@ class Nikkei():
             for brandcode in brandcodes:
                 self.phase2[datatype][brandcode] = np.asarray(self.phase2[datatype][brandcode], dtype=theano.config.floatX)
 
-    # theano、scipyなど、様々なデータ形式へ変換して取得
-  def get_data(self, data, type=None):
+# theano、scipyなど、様々なデータ形式へ変換して取得
+    def get_data(self, data, type=None):
         """
         各種データタイプへの変換
         """
