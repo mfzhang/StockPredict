@@ -8,16 +8,16 @@ params = {
         'brandcode' : '0101'
     },
     'STEP4' : {
-            'hidden_layers_size' : [1000],
-            'hidden_recurrent' : 10,
+            'hidden_layers_size' : [2000,1500],
+            'hidden_recurrent' : 1000,
             'pretrain' : {
-            'batch_size' : 20,
-            'learning_rate' : 0.1,
-            'epochs' : 50 
+            'batch_size' :100, 
+            'learning_rate' : 0.001,
+            'epochs' : 100 
         },
         'finetune' : {
-            'batch_size' :10,
-            'learning_rate' : 3,
+            'batch_size' :30,
+            'learning_rate' : 1.8,
             'epochs' :50
         } 
     }

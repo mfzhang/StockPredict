@@ -47,11 +47,11 @@ class LogisticRegression(object):
                                name='b', borrow=True)
 
         # compute vector of class-membership probabilities in symbolic form
-        self.p_y_given_x = T.dot(input, self.W) + self.b
+        self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
 
         # compute prediction as class whose probability is maximal in
         # symbolic form
-        self.y_pred = self.p_y_given_x
+        self.y_pred = T.argmax(self.p_y_given_x,axis=1)
 
         # parameters of the model
         self.params = [self.W, self.b]
@@ -104,12 +104,13 @@ class LogisticRegression(object):
         # check if y has same dimension of y_pred
         if y.ndim != self.y_pred.ndim:
             raise TypeError('y should have the same shape as self.y_pred',
-                ('y', y.type, 'y_pred', self.y_pred.type))
+                ('y', target.type, 'y_pred', self.y_pred.type))
         # check if y is of the correct datatype
         if y.dtype.startswith('int'):
             # the T.neq operator returns a vector of 0s and 1s, where 1
             # represents a mistake in prediction
             return T.mean(T.neq(self.y_pred, y))
         else:
-            return T.mean(T.neq(self.y_pred <= 0, y <= 0))
+	        raise NotImplementedError()
+            #return T.mean(T.neq(self.y_pred <= 0, y <= 0))
 

@@ -15,7 +15,7 @@ import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
 from RNN_RBM import RnnRbm
-sys.path.append('/home/yoshihara/StockPredict/tutorial')
+sys.path.append('../../tutorial')
 from tutorial.LogisticRegression import LogisticRegression
 from tutorial.HiddenLayer import HiddenLayer
 
@@ -274,7 +274,7 @@ def train_rnnrbm(dataset=None, hidden_layers_sizes=[500], hidden_recurrent=150,
                 b.append(pretraining_f_bh_t[i](index=batch_index))
             print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
             print numpy.mean(c)
-
+            print numpy.mean(b) 
     end_time = time.clock()
     print >> sys.stderr, ('The pretraining code for file ' +
                           os.path.split(__file__)[1] +
@@ -354,18 +354,18 @@ def train_rnnrbm(dataset=None, hidden_layers_sizes=[500], hidden_recurrent=150,
                 break
 
     end_time = time.clock()
-
-    print rnnrbm.get_prediction([test_set_x.eval()[0]])
         
     print(('Optimization complete with best validation score of %f %%,'
            'with test performance %f %%') %
                  (best_validation_loss * 100., test_score * 100.))
-    pdb.set_trace()
+    #pdb.set_trace()
     
     
     print >> sys.stderr, ('The fine tuning code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time)
                                               / 60.))
+    return test_score
+
 if __name__ == '__main__':
     train_rnnrbm()

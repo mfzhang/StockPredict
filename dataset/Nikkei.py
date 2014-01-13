@@ -3,16 +3,15 @@ import numpy as np
 import theano
 import theano.tensor as T
 import scipy.sparse as sp
-import json, codecs, cPickle, gzip, utils, datetime, pdb, sys
-from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
+import json, codecs, cPickle, gzip, datetime, pdb, sys
 
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
-wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/all.wordidset"
-wordidset_chi2_selected = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2.wordidset"
+wordidset_all = "a"
+wordidset_chi2_selected = "dataset/dataset/chi2.wordidset"
 
 ##  株価 / 辞書データに関するディレクトリ  
-pricelistdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/StockPrice/pricelist.pkl'
-dicdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/threshold100_-kigou-joshi-jodoushi-namedentity_heuristics.dic'
+pricelistdir = 'dataset/dataset/pricelist.pkl'
+dicdir = 'dataset/dataset/threshold100_-kigou-joshi-jodoushi-namedentity_heuristics.dic'
 
 
 class Nikkei():
@@ -34,6 +33,7 @@ class Nikkei():
         datasetdir = wordidset_chi2_selected
         n_dic = 1000
         if dataset_type != 'chi2_selected':
+            print dataset_type
             datasetdir = wordidset_all
             n_dic = len(json.load(open(dicdir)))
         self.raw_data = cPickle.load(open(datasetdir))
@@ -74,11 +74,11 @@ class Nikkei():
         PHASE1の実験に用いるデータの準備
 
         """
-        for year in self.years['train']:
+        for year in self.train_years:
             self.trainset.extend(self._expandArray(dataset[year].values()))
-        for year in self.years['valid']:
+        for year in self.valid_years:
             self.validset.extend(self._expandArray(dataset[year].values()))
-        for year in self.years['test']:
+        for year in self.test_years:
             self.testset.extend(self._expandArray(dataset[year].values()))
         self.phase1['train'] = self.get_data(self.trainset, type=self.type)
         self.phase1['valid'] = self.get_data(self.validset, type=self.type)
@@ -90,7 +90,9 @@ class Nikkei():
         :param brandcode (string) : 銘柄コード（'0101' : 日経平均、'7203' : トヨタなど）
 
         """
-
+        count_zero = 0
+        count_one = 0
+        count_two = 0
         self.pricelist = cPickle.load(open(pricelistdir))
         for datatype in ['train', 'valid', 'test']:
             for year in self.years[datatype]:
@@ -98,23 +100,31 @@ class Nikkei():
                     pricelist_datelist = self.pricelist[brandcode][year].keys()
                     pricelist_datelist.sort()
                     for date in pricelist_datelist:
-                        ## 株価とニュース記事共にある日のみを対象とする
                         if date in dataset[year]:
                             self.phase2[datatype]['x'].append(dataset[year][date])
                             ## TODO : 当日の終値と始値の差を予測するタスクにしているが、MACDを利用したり、もう少し長期的に見たりいろいろできるので要検討
-                            if self.pricelist[brandcode][year][date]['closing_price'] == 0:
-                                rate = 0
+                            rate = self.pricelist[brandcode][year][date]['macd_tomorrow'] - self.pricelist[brandcode][year][date]['macd']
+                            if rate >= 0:
+                                self.phase2[datatype]['y'].append(0)
                             else:
-                                rate = float(self.pricelist[brandcode][year][date]['closing_price'] - self.pricelist[brandcode][year][date]['opening_price']) / self.pricelist[brandcode][year][date]['closing_price']
-                            self.phase2[datatype]['y'].append([rate])
-                            
-
+                                self.phase2[datatype]['y'].append(1)
+                            """
+                            if rate > 10:
+                                self.phase2[datatype]['y'].append(0)
+                                count_zero +=1
+                            elif rate <-10:
+                                self.phase2[datatype]['y'].append(1)
+                                count_one +=1
+                            else:
+                                self.phase2[datatype]['y'].append(2)
+                                count_two +=1
+                            """                                    
+            #print "0:%d, 1:%d"%(count_zero,count_one)
             if dataset_type == 'chi2_selected':
                 self.phase2[datatype]['x'] = self.get_numpy_dense_design(self.phase2[datatype]['x'])
             else:
                 self.phase2[datatype]['x'] = np.asarray(self.phase2[datatype]['x'], dtype=theano.config.floatX)
             self.phase2[datatype]['y'] = np.asarray(self.phase2[datatype]['y'], dtype=theano.config.floatX)
-
         
             
         
@@ -152,8 +162,6 @@ class Nikkei():
 
         """
         self.phase2_input_size = model.n_hidden
-
-
         for year in self.raw_data.keys():
             print year
             if year not in self.unified:
@@ -161,11 +169,8 @@ class Nikkei():
             for date in self.raw_data[year].keys():
                 vectors = self.get_numpy_dense_design(self.raw_data[year][date])
                 # daily_vector = T.max(model.get_hidden_values(self.get_numpy_dense_design(self.raw_data[year][date])), axis=0).eval()
-
                 daily_vector = np.max(model.get_hidden_values(vectors).eval(), axis=0)
-                pdb.set_trace()
                 self.unified[year][date] = daily_vector
-                # pdb.set_trace()
     
     def get_theano_design(self, array):
         return theano.shared(array)
