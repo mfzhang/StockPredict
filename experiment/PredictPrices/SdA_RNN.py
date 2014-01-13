@@ -20,7 +20,7 @@ sys.path.append('/home/fujikawa/lib/python/other/theano-rnn')
 from tutorial.LogisticRegression import LogisticRegression
 from tutorial.HiddenLayer import HiddenLayer
 from tutorial.dA import dA
-from rnn import MetaRNN, RNN
+from tutorial.rnn import MetaRNN, RNN
 
 
 class SdA(object):

@@ -9,11 +9,11 @@ import theano
 import theano.tensor as T
 import theano.sparse
 from theano.tensor.shared_randomstreams import RandomStreams
-sys.path.extend(['/home/fujikawa/lib/python/other/pylearn2/pylearn2', '/home/fujikawa/StockPredict/src/deeplearning/dataset'])
+#sys.path.extend(['/home/fujikawa/lib/python/other/pylearn2/pylearn2', '/home/fujikawa/StockPredict/src/deeplearning/dataset'])
 
 # import my library
-from XOR import XOR
-from Nikkei import Nikkei
+#from XOR import XOR
+from dataset.Nikkei import Nikkei
 
 # outdir = '/home/fujikawa/StockPredict/src/deeplearning/experiment/Model/sae.pkl'
 
