@@ -1,4 +1,5 @@
 experiment/Model/*
+dataset/dataset/*
 .DS_Store
 *.pkl
 *.pyc

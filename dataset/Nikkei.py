@@ -8,15 +8,19 @@ import json, codecs, cPickle, gzip, datetime, pdb, sys
 
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
 
-# wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/all.wordidset"
-wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
-wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
-wordidset_chi2_selected = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2.wordidset"
+wordidset_all = "dataset/chi2-unified.wordidset"
+
+# wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
+# wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
+# wordidset_chi2_selected = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2.wordidset"
 
 ##  株価 / 辞書データに関するディレクトリ  
-pricelistdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/StockPrice/pricelist.pkl'
-dicdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/chi2-result-unified.dic'
 
+pricelistdir = 'dataset/pricelist.pkl'
+dicdir = 'dataset/chi2-result-unified.dic'
+
+# pricelistdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/StockPrice/pricelist.pkl'
+# dicdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/chi2-result-unified.dic'
 
 class Nikkei():
     def __init__(self, type="theano_sparse", dataset_type='chi2_selected', brandcode ='0101'):
