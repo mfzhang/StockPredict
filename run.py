@@ -18,7 +18,7 @@ import curses
 
 
 
-default_model_dir = '/home/fujikawa/StockPredict/src/deeplearning/experiment/Model'
+default_model_dir = 'experiment/Model'
 
 
 

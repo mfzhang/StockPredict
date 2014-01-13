@@ -1,7 +1,7 @@
 # coding: utf-8
 
 # general library imports
-import pudb, sys
+import sys
 from random import randint
 import numpy as np
 import pdb
@@ -12,32 +12,19 @@ from theano import tensor as T
 from theano.tensor import nnet
 from theano.tensor.shared_randomstreams import RandomStreams
 
-# import pylearn2
-"""
-sys.path.extend(['/home/fujikawa/lib/python/other/pylearn2/pylearn2', '/home/fujikawa/StockPredict/src/deeplearning/dataset'])
-from pylearn2.models import mlp
-from pylearn2.training_algorithms.sgd import SGD
-from pylearn2.termination_criteria import EpochCounter
-from pylearn2.train import Train
-from pylearn2.datasets.transformer_dataset import TransformerDataset
-from pylearn2.models.rbm import RBM, BlockGibbsSampler
-from pylearn2.energy_functions.rbm_energy import GRBM_Type_1
-from pylearn2.costs.cost import Cost
-from pylearn2.costs.ebm_estimation import SMD
-from pylearn2.corruption import GaussianCorruptor
-from pylearn2.utils import as_floatX, safe_update, sharedX, safe_union
-from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
-from pylearn2.linear.matrixmul import MatrixMul
-
-# import my library
-from XOR import XOR
-"""
 #Don't use a python long as this don't work on 32 bits computers.
 np.random.seed(0xbeef)
 rng = RandomStreams(seed=np.random.randint(1 << 30))
 theano.config.warn.subtensor_merge_bug = False
+numpy_rng  = np.random.RandomState(1234)
 
-
+def shared_random(n_visible,n_hidden,name):
+        init = np.asarray(numpy_rng.uniform(
+                      low=-4 * np.sqrt(6. / (n_hidden + n_visible)),
+                      high=4 * np.sqrt(6. / (n_hidden + n_visible)),
+                      size=(n_visible, n_hidden)),
+                      dtype=theano.config.floatX)
+        return theano.shared(value = init,name = name,borrow=True)
 
 class RnnRbm(object):
 #class RnnRbm(RBM):
@@ -47,15 +34,24 @@ class RnnRbm(object):
         self.n_hidden = n_hidden
         self.n_hidden_recurrent = n_hidden_recurrent
         
-        self.W = theano.shared(np.zeros([n_visible, n_hidden]), name='W', borrow=True)
+        self.W = shared_random(n_visible,n_hidden,'W') 
+        self.Wuh = shared_random(n_hidden_recurrent,n_hidden,'Wuh') 
+        self.Wuv = shared_random(n_hidden_recurrent,n_visible,'Wuv') 
+        self.Wvu = shared_random(n_visible, n_hidden_recurrent,'Wvu') 
+        self.Wuu = shared_random(n_hidden_recurrent, n_hidden_recurrent,'Wuu') 
+        
+        """
+        self.W = theano.shared(np.random.random([n_visible, n_hidden]), name='W', borrow=True)
         self.Wuh = theano.shared(np.random.random([n_hidden_recurrent, n_hidden]), name='Wuh', borrow=True)
         self.Wuv = theano.shared(np.random.random([n_hidden_recurrent, n_visible]), name='Wuv', borrow=True)
         self.Wvu = theano.shared(np.random.random([n_visible, n_hidden_recurrent]), name='Wvu', borrow=True)
         self.Wuu = theano.shared(np.random.random([n_hidden_recurrent, n_hidden_recurrent]), name='Wuu', borrow=True)
-        self.bv = theano.shared(np.zeros(n_visible), name='b_vt', borrow=True)
-        self.bh = theano.shared(np.zeros(n_hidden), name='b_ht', borrow=True)
-        self.bh_t = theano.shared(np.zeros(n_hidden), name='bh_t', borrow=True)
-        self.bu = theano.shared(np.random.random(n_hidden_recurrent), name='b_ut', borrow=True)
+        """
+        self.bv = theano.shared(np.zeros((n_visible,),dtype=theano.config.floatX), name='b_vt', borrow=True)
+        self.bh = theano.shared(np.zeros((n_hidden,),dtype=theano.config.floatX), name='b_ht', borrow=True)
+        self.bh_t = theano.shared(np.zeros((n_hidden,),dtype=theano.config.floatX), name='bh_t', borrow=True)
+        self.bu = theano.shared(np.zeros((n_hidden_recurrent,),dtype=theano.config.floatX), name='b_ut', borrow=True)
+        #self.bu = theano.shared(np.random.random(n_hidden_recurrent), name='b_ut', borrow=True)
 
         self.params = self.W, self.bv, self.bh, self.Wuh, self.Wuv, self.Wvu, self.Wuu, self.bu  # learned parameters as shared
                                                     # variables
@@ -65,7 +61,9 @@ class RnnRbm(object):
         u0 = T.zeros((self.n_hidden_recurrent,))  # initial value for the RNN hidden
                                              # units
         self.u_tm1 = u0
-       
+    
+
+
     def get_cost_updates(self,lr=1.0):
         (v, v_sample, cost, monitor, params, updates_train, v_t,
          updates_generate,bh_t,updates_bh_t) = self.build_rnnrbm(self.n_visible, self.n_hidden,
@@ -86,9 +84,7 @@ class RnnRbm(object):
         return monitor,updates_train,bh_t,updates_bh_t
 
     def build_rnnrbm(self, n_visible, n_hidden, n_hidden_recurrent):
-        u0 = T.zeros((n_hidden_recurrent,))  # initial value for the RNN hidden
-                                             # units
-
+        u0 = T.zeros((self.n_hidden_recurrent,))  # initial value for the RNN hidden
         def recurrence(v_t, u_tm1):
             bv_t = self.bv + T.dot(u_tm1, self.Wuv)
             bh_t = self.bh + T.dot(u_tm1, self.Wuh)
@@ -98,7 +94,17 @@ class RnnRbm(object):
                                                bh_t, k=25)
             u_t = T.tanh(self.bu + T.dot(v_t, self.Wvu) + T.dot(u_tm1, self.Wuu))
             return ([v_t, u_t], updates) if generate else [u_t, bv_t, bh_t]
-
+        """
+        def recurrence(v_t, u_tm1):
+            bv_t = self.bv + T.dot(u_tm1, self.Wuv)
+            bh_t = self.bh + T.dot(u_tm1, self.Wuh)
+            generate = v_t is None
+            if generate:
+                v_t, _, _, updates = self.build_rbm(T.zeros((n_visible,)), self.W, bv_t,
+                                               bh_t, k=25)
+            u_t = T.tanh(self.bu + T.dot(v_t, self.Wvu) + T.dot(u_tm1, self.Wuu))
+            return ([v_t, u_t], updates) if generate else [u_t, bv_t, bh_t]
+	"""
         (u_t, bv_t, bh_t), updates_train = theano.scan(
             lambda v_t, u_tm1, *_: recurrence(v_t, u_tm1),
             sequences=self.v, outputs_info=[u0, None, None], non_sequences=self.params)
@@ -108,7 +114,11 @@ class RnnRbm(object):
         updates_bh_t = updates_train.copy()
 
         updates_train.update(updates_rbm)
-
+        
+        #(u_t, bv_t, bh_t), updates_bh_t = theano.scan(
+        #    lambda v_t, u_tm1, *_: recurrence(v_t, u_tm1),
+        #    sequences=self.v, outputs_info=[u0, None, None], non_sequences=self.params)
+        
         # symbolic loop for sequence generation
         (v_t, u_t), updates_generate = theano.scan(
             lambda u_tm1, *_: recurrence(None, u_tm1),

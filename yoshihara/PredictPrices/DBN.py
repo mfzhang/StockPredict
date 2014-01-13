@@ -12,7 +12,7 @@ import theano
 import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 
-sys.path.append('/home/yoshihara/StockPredict/tutorial')
+sys.path.append('../../tutorial')
 
 from tutorial.LogisticRegression import LogisticRegression
 from tutorial.HiddenLayer import HiddenLayer

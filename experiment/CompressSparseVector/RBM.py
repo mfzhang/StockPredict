@@ -15,7 +15,9 @@ sys.path.extend(['/home/fujikawa/lib/python/other/pylearn2/pylearn2', '/home/fuj
 from XOR import XOR
 from Nikkei import Nikkei
 
-
+# activate_function = T.nnet.sigmoid
+def activate_function(arg):
+    return T.tanh(abs(arg) + T.cast(0.001, dtype=theano.config.floatX))
 
 class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
@@ -80,8 +82,9 @@ class RBM(object):
             # converted using asarray to dtype theano.config.floatX so
             # that the code is runable on GPU
             initial_W = numpy.asarray(numpy_rng.uniform(
-                      low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
-                      high=4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                      # low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                      low=0,
+                      high=8 * numpy.sqrt(6. / (n_hidden + n_visible)),
                       size=(n_visible, n_hidden)),
                       dtype=theano.config.floatX)
             # theano shared variables for weights and biases
@@ -138,7 +141,7 @@ class RBM(object):
 
         '''
         pre_sigmoid_activation = T.dot(vis, self.W) + self.hbias
-        return [pre_sigmoid_activation, T.nnet.sigmoid(pre_sigmoid_activation)]
+        return [pre_sigmoid_activation, activate_function(pre_sigmoid_activation)]
 
     def sample_h_given_v(self, v0_sample):
         ''' This function infers state of hidden units given visible units '''
@@ -166,7 +169,7 @@ class RBM(object):
 
         '''
         pre_sigmoid_activation = T.dot(hid, self.W.T) + self.vbias
-        return [pre_sigmoid_activation, T.nnet.sigmoid(pre_sigmoid_activation)]
+        return [pre_sigmoid_activation, activate_function(pre_sigmoid_activation)]
 
     def sample_v_given_h(self, h0_sample):
         ''' This function infers state of visible units given hidden units '''
@@ -248,8 +251,8 @@ class RBM(object):
 
         l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
         cost = T.mean(self.free_energy(self.input)) - T.mean(self.free_energy(chain_end))
-        # cost += self.reg_weight * 0.1 * T.sum(T.mean(T.nnet.sigmoid(T.dot(self.input, self.W) + self.hbias), axis=0))
-        # cost += self.reg_weight * T.sum(T.mean(T.nnet.sigmoid(T.dot(self.input, self.W) + self.hbias), axis=0) ** 2)
+        # cost += self.reg_weight * 0.1 * T.sum(T.mean(activate_function(T.dot(self.input, self.W) + self.hbias), axis=0))
+        # cost += self.reg_weight * T.sum(T.mean(activate_function(T.dot(self.input, self.W) + self.hbias), axis=0) ** 2)
         # cost += self.reg_weight * 0.5 * T.sum(T.mean(self.propup(self.input)[1], axis=0))
         cost += l2_w
         cost += l2_h
@@ -261,13 +264,20 @@ class RBM(object):
         gparams = T.grad(cost, self.params, consider_constant=[chain_end])
 
         # constructs the update dictionary
+        i = 0
         for gparam, param in zip(gparams, self.params):
-            # if i == 0:
+            if i == 0:
             # # make sure that the learning rate is of the right dtype
             #     param_fixed = param - gparam * T.cast(lr, dtype=theano.config.floatX)
             #     param_fixed = (param_fixed + abs(param_fixed)) / 2
             #     updates[param] = param_fixed
-            updates[param] = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+                param_fixed = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+                param_fixed = (param_fixed - param_fixed.min(axis=0)) ** 2
+                param_fixed /= (param_fixed.max(axis=0) + 0.001)
+                updates[param] = param_fixed
+            else:
+                updates[param] = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+            i += 1
         if persistent:
             # Note that this works only if persistent is a shared variable
             updates[persistent] = nh_samples[-1]
@@ -326,7 +336,7 @@ class RBM(object):
         fe_xi_flip = self.free_energy(xi_flip)
 
         # equivalent to e^(-FE(x_i)) / (e^(-FE(x_i)) + e^(-FE(x_{\i})))
-        cost = T.mean(self.n_visible * T.log(T.nnet.sigmoid(fe_xi_flip -
+        cost = T.mean(self.n_visible * T.log(activate_function(fe_xi_flip -
                                                             fe_xi)))
 
         # increment bit_i_idx % number as part of updates
@@ -365,8 +375,8 @@ class RBM(object):
         """        
 
         cross_entropy = T.mean(
-                T.sum(self.input * T.log(T.nnet.sigmoid(pre_sigmoid_nv)) +
-                (1 - self.input) * T.log(1 - T.nnet.sigmoid(pre_sigmoid_nv)),
+                T.sum(self.input * T.log(activate_function(pre_sigmoid_nv)) +
+                (1 - self.input) * T.log(1 - activate_function(pre_sigmoid_nv)),
                       axis=1))
 
 
@@ -474,20 +484,6 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
     plotting_time = 0.
     start_time = time.clock()
 
-    # def l2_w():
-    #     return 0.01 * model.reg_weight * T.sum(model.W ** 2).eval()
-    # def KL(p, p_hat):
-    #     # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-    #     return 10000 * model.reg_weight * numpy.sum((p * numpy.log(p / p_hat)) + ((1 - p) * numpy.log((1 - p) / (1 - p_hat))))
-    # def cross_entropy(p, q):
-    #     return -q * T.log(q) - (1 - p) * T.log(1 - q)
-    # def l1_h(test_propup):
-    #     return model.reg_weight  * (test_propup.mean(axis=0)).sum()
-    # def l2_h(test_propup):
-    #     return model.reg_weight * (test_propup.mean(axis=0) ** 2).sum()
-    # def max_penalty(test_propup):
-    #     return 0.001 * model.reg_weight * ((1 - test_propup.max(axis=0)) ** 2).sum()
-    # go through training epochs
     x_example = dataset.get_batch_design(0, 2500, dataset.phase1['valid']).eval()
     # pdb.set_trace()
 
@@ -501,49 +497,27 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
         previous_cost = 0
         for batch_index in xrange(n_train_batches):
             
-            # pdb.set_trace()
-            
-            mean_cost += [trainer(batch_index)]
-            
-                # msg = '%s   e: %d, b: %d, cost: %.2f'% (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost))
-                # test_propup = model.propup(dataset.get_batch_design(0, 2500, dataset.phase1['valid']))[1].eval()
-                # pre_sigmoid_ph, ph_mean, ph_sample = model.sample_h_given_v(dataset.get_batch_design(0, 100, dataset.phase1['valid']))
-                # msg = ('%s   epoch : %d, batch : %d, cost : %.2f, cost diff: %.3f, l2: %.2f, KL: %.2f, sparsity: %.2f, max-min: %.2f, std: %.2f, output: %s'
-                #       % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), numpy.mean(mean_cost) - previous_cost,
-                #         l2(), float(KL(0.02, test_propup.mean())),
-                #         test_propup.mean(), (test_propup.max(axis=0) - test_propup.min(axis=0)).mean(), 
-                #         test_propup.std(axis=0).mean(), outdir.split('/')[len(outdir.split('/')) - 1]))
-                # pdb.set_trace()
-                # l1 = T.sum(T.mean(T.nnet.sigmoid(T.dot(dataset.get_batch_design(0, 100, dataset.phase1['valid']), model.W) + model.hbias), axis=0))
-                # l2 = T.sum(T.mean(T.nnet.sigmoid(T.dot(dataset.get_batch_design(0, 100, dataset.phase1['valid']), model.W) + model.hbias), axis=0) ** 2)
-                # pdb.set_trace()
+            while(True):
+                try:
+                    mean_cost += [trainer(batch_index)]
+                    msg = '%s e: %d, b: %d, c: %.2f, '% (str(datetime.datetime.now().strftime("%m/%d %H:%M")), epoch, batch_index, numpy.mean(mean_cost))
+                    if batch_index % 100 == 0:
+                        l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
+                        test_propup = model.get_propup_matrix(x_example)
+                        # msg += 'l2_w: %.2f, l2_h: %.2f, ' % (float(l2_w.eval()), float(l2_h.eval()))
+                        msg += 'l2_w: %.2f, ' % (float(l2_w.eval()))
+                        msg += 'sp: %.2f, mm: %.2f~%.2f, ' % (test_propup.mean(axis=1).mean(), test_propup.max(axis=0).mean(), test_propup.min(axis=0).mean())
+                        msg += '%s' % str(numpy.histogram(test_propup.mean(axis=0), range=[0,1])[0])
+                        # pdb.set_trace()
+                        # print msg
 
-                # l1 = model.reg_weight  * (test_propup.mean(axis=0)).sum()
-                # l2= model.reg_weight * (test_propup.mean(axis=0) ** 2).sum()
-                # max_pen= 0.1 * model.reg_weight * ((1 - test_propup.max(axis=0)) ** 2).sum()
-                # pdb.set_trace()
+                    sys.stdout.write("\r%s" % msg)
+                    sys.stdout.flush()
+                    break
+                except KeyboardInterrupt:
+                    pdb.set_trace()
+
                 
-                # msg = ('%s   e: %d, b: %d, cost: %.2f, m: %.2f, l1: %.2f, wl2: %.2f, sp: %.2f, mm: %.2f-%.2f: %s :output: %s'
-                #       % (str(datetime.datetime.now()), epoch, batch_index, numpy.mean(mean_cost), 
-                #         max_penalty(test_propup), l1_h(test_propup), l2_w(),
-                #         test_propup.mean(axis=1).mean(), test_propup.max(axis=0).mean(), test_propup.min(axis=0).mean(),
-                #         str(numpy.histogram(test_propup.mean(axis=0), range=[0,1])[0]),
-                #         outdir.split('/')[len(outdir.split('/')) - 1]))
-
-            msg = '%s e: %d, b: %d, c: %.2f, '% (str(datetime.datetime.now().strftime("%m/%d %H:%M")), epoch, batch_index, numpy.mean(mean_cost))
-            if batch_index % 100 == 0:
-                l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
-                test_propup = model.get_propup_matrix(x_example)
-                # msg += 'l2_w: %.2f, l2_h: %.2f, ' % (float(l2_w.eval()), float(l2_h.eval()))
-                msg += 'l2_w: %.2f, ' % (float(l2_w.eval()))
-                msg += 'sp: %.2f, mm: %.2f~%.2f, ' % (test_propup.mean(axis=1).mean(), test_propup.max(axis=0).mean(), test_propup.min(axis=0).mean())
-                msg += '%s' % str(numpy.histogram(test_propup.mean(axis=0), range=[0,1])[0])
-
-                # print msg
-
-            sys.stdout.write("\r%s" % msg)
-            sys.stdout.flush()
-            
             previous_cost = numpy.mean(mean_cost)
         model.epoch += 1
         params = model.output_params()

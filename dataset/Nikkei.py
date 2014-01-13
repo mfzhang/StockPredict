@@ -4,10 +4,10 @@ from progressbar import ProgressBar
 import theano
 import theano.tensor as T
 import scipy.sparse as sp
-import json, codecs, cPickle, gzip, utils, datetime, pdb, sys
-from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
+import json, codecs, cPickle, gzip, datetime, pdb, sys
 
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
+
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/all.wordidset"
 wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
 wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
@@ -37,6 +37,7 @@ class Nikkei():
         datasetdir = wordidset_chi2_selected
         n_dic = 1000
         if dataset_type != 'chi2_selected':
+            print dataset_type
             datasetdir = wordidset_all
             n_dic = len(json.load(open(dicdir)))
         self.raw_data = cPickle.load(open(datasetdir))
@@ -80,11 +81,11 @@ class Nikkei():
         PHASE1の実験に用いるデータの準備
 
         """
-        for year in self.years['train']:
+        for year in self.train_years:
             self.trainset.extend(self._expandArray(dataset[year].values()))
-        for year in self.years['valid']:
+        for year in self.valid_years:
             self.validset.extend(self._expandArray(dataset[year].values()))
-        for year in self.years['test']:
+        for year in self.test_years:
             self.testset.extend(self._expandArray(dataset[year].values()))
         self.phase1['train'] = self.get_data(self.trainset, type=self.type)
         self.phase1['valid'] = self.get_data(self.validset, type=self.type)
@@ -101,7 +102,9 @@ class Nikkei():
                                   3 : 二値分類 : (終値 - 始値) <> 0
                                   4 : 二値分類 : 翌日MACD - 当日MACD <> 0
         """
-
+        count_zero = 0
+        count_one = 0
+        count_two = 0
         self.pricelist = cPickle.load(open(pricelistdir))
         for datatype in ['train', 'valid', 'test']:
             for year in self.years[datatype]:
@@ -138,15 +141,17 @@ class Nikkei():
                                         self.phase2[datatype][brandcode] = []
                                     self.phase2[datatype][brandcode].append([label])
 
+
             if dataset_type == 'chi2_selected':
                 self.phase2[datatype]['x'] = self.get_numpy_dense_design(self.phase2[datatype]['x'])
             else:
                 self.phase2[datatype]['x'] = np.asarray(self.phase2[datatype]['x'], dtype=theano.config.floatX)
+
             for brandcode in brandcodes:
                 self.phase2[datatype][brandcode] = np.asarray(self.phase2[datatype][brandcode], dtype=theano.config.floatX)
 
     # theano、scipyなど、様々なデータ形式へ変換して取得
-    def get_data(self, data, type=None):
+  def get_data(self, data, type=None):
         """
         各種データタイプへの変換
         """
@@ -208,8 +213,6 @@ class Nikkei():
         
         
         self.phase2_input_size = model.n_hidden
-        # x = T.matrix()
-        # f = theano.function([x], model.propup(x)[1])
         for year in self.raw_data.keys():
             print year
             if year not in self.unified:
@@ -220,6 +223,7 @@ class Nikkei():
             for i, date in enumerate(self.raw_data[year].keys()):
                 bar.update(i)
                 vectors = self.get_numpy_dense_design(self.raw_data[year][date])
+
                 vectors_baseline = np.max(vectors, axis=0)
                 if model_type == 'rbm':
                     # pdb.set_trace()
