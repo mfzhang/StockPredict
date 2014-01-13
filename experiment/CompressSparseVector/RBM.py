@@ -17,7 +17,8 @@ from dataset.Nikkei import Nikkei
 
 # activate_function = T.nnet.sigmoid
 def activate_function(arg):
-    return T.tanh(abs(arg) + T.cast(0.001, dtype=theano.config.floatX))
+    return T.nnet.sigmoid(arg)
+    # return T.nnet.sigmoid(arg) - T.cast(0.5, dtype=theano.config.floatX)
 
 class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
@@ -501,7 +502,7 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
                 try:
                     mean_cost += [trainer(batch_index)]
                     msg = '%s e: %d, b: %d, c: %.2f, '% (str(datetime.datetime.now().strftime("%m/%d %H:%M")), epoch, batch_index, numpy.mean(mean_cost))
-                    if batch_index % 100 == 0:
+                    if batch_index % 30 == 0:
                         l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
                         test_propup = model.get_propup_matrix(x_example)
                         # msg += 'l2_w: %.2f, l2_h: %.2f, ' % (float(l2_w.eval()), float(l2_h.eval()))

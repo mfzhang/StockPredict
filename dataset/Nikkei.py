@@ -12,7 +12,7 @@ wordidset_all = "dataset/dataset/chi2-unified.wordidset"
 
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
-# wordidset_chi2_selected = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2.wordidset"
+wordidset_chi2_selected = "dataset/dataset/chi2.wordidset"
 
 ##  株価 / 辞書データに関するディレクトリ  
 
@@ -85,11 +85,11 @@ class Nikkei():
         PHASE1の実験に用いるデータの準備
 
         """
-        for year in self.train_years:
+        for year in self.years['train']:
             self.trainset.extend(self._expandArray(dataset[year].values()))
-        for year in self.valid_years:
+        for year in self.years['valid']:
             self.validset.extend(self._expandArray(dataset[year].values()))
-        for year in self.test_years:
+        for year in self.years['test']:
             self.testset.extend(self._expandArray(dataset[year].values()))
         self.phase1['train'] = self.get_data(self.trainset, type=self.type)
         self.phase1['valid'] = self.get_data(self.validset, type=self.type)
@@ -154,7 +154,7 @@ class Nikkei():
             for brandcode in brandcodes:
                 self.phase2[datatype][brandcode] = np.asarray(self.phase2[datatype][brandcode], dtype=theano.config.floatX)
 
-    # theano、scipyなど、様々なデータ形式へ変換して取得
+# theano、scipyなど、様々なデータ形式へ変換して取得
     def get_data(self, data, type=None):
         """
         各種データタイプへの変換
