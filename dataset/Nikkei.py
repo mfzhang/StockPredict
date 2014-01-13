@@ -8,7 +8,7 @@ import json, codecs, cPickle, gzip, datetime, pdb, sys
 
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
 
-wordidset_all = "dataset/chi2-unified.wordidset"
+wordidset_all = "dataset/dataset/chi2-unified.wordidset"
 
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
@@ -16,8 +16,8 @@ wordidset_all = "dataset/chi2-unified.wordidset"
 
 ##  株価 / 辞書データに関するディレクトリ  
 
-pricelistdir = 'dataset/pricelist.pkl'
-dicdir = 'dataset/chi2-result-unified.dic'
+pricelistdir = 'dataset/dataset/pricelist.pkl'
+dicdir = 'dataset/dataset/chi2-result-unified.dic'
 
 # pricelistdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/StockPrice/pricelist.pkl'
 # dicdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/chi2-result-unified.dic'
@@ -155,7 +155,7 @@ class Nikkei():
                 self.phase2[datatype][brandcode] = np.asarray(self.phase2[datatype][brandcode], dtype=theano.config.floatX)
 
     # theano、scipyなど、様々なデータ形式へ変換して取得
-  def get_data(self, data, type=None):
+    def get_data(self, data, type=None):
         """
         各種データタイプへの変換
         """

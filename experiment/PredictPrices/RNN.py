@@ -4,9 +4,9 @@ import sys, pdb
 sys.path.append('/home/fujikawa/lib/python/other/theano-rnn')
 sys.path.append('/home/fujikawa/lib/python/other/theano-hf')
 
-from rnn import MetaRNN
-from rnn_minibatch import MetaRNN as MetaRNN_minibatch
-from hf import SequenceDataset, hf_optimizer
+from tutorial.rnn import MetaRNN
+from tutorial.rnn_minibatch import MetaRNN as MetaRNN_minibatch
+from tutorial.hf import SequenceDataset, hf_optimizer
 import numpy as np
 
 def train_RNN_minibatch(dataset=None, n_hidden=5000, steps=30, batch_size=5, n_epochs=100, optimizer='bfgs'):

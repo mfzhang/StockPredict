@@ -29,7 +29,7 @@ default_model_dir = 'experiment/Model'
 dataset_type = 'test' # ['all' / 'chi2_selected']
 
 params = {
-    'experiment_type' : 'proposed',
+    'experiment_type' : 'baseline',
     'STEP1' : {
         'beta' : 1.,
         'model' : 'sae',
