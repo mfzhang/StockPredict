@@ -20,8 +20,8 @@ from dataset.Nikkei import Nikkei
 class SparseAutoencoder(object):
     
 
-    def __init__(self, input=None, n_visible=784, n_hidden=500, sp_penalty=0.03, p=0.02, beta=0., weight_reg=0.001,
-                 W=None, bhid=None, bvis=None, params = None):
+    def __init__(self, input=None, n_visible=784, n_hidden=500, sp_penalty=0.03, p=0.02, beta=0., reg_weight=0.001,
+                 W=None, bhid=None, bvis=None, params = None, corruption_level=0):
         """
         Initialize the dA class by specifying the number of visible units (the
         dimension d of the input ), the number of hidden units ( the dimension
@@ -76,22 +76,24 @@ class SparseAutoencoder(object):
             bhid = theano.shared(params['b_hid'], name='b', borrow=True)
             self.n_visible = params['n_visible']
             self.n_hidden = params['n_hidden']
-            self.weight_reg = params['weight_reg']
+            self.reg_weight = params['reg_weight']
             self.p = params['p']
             self.sp_penalty = params['sp_penalty']
             self.beta = params['beta']
             self.epoch = params['epoch']
             theano_rng = params['theano_rng']
+            self.corruption_level = params['corruption_level']
 
         else:
             self.n_visible = n_visible
             self.n_hidden = n_hidden
-            self.weight_reg = weight_reg
+            self.reg_weight = reg_weight
             self.p = p
             self.sp_penalty = sp_penalty
             self.beta = beta
             self.epoch = 0
             theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
+            self.corruption_level = corruption_level
         
 
         
@@ -135,11 +137,18 @@ class SparseAutoencoder(object):
         if input == None:
             # we use a matrix because we expect a minibatch of several
             # examples, each example being a row
-            self.x = T.dmatrix(name='input')
+            self.input = T.dmatrix(name='input')
         else:
-            self.x = input
+            self.input = input
 
         self.params = [self.W, self.b, self.b_prime]
+
+        matrix = T.matrix()
+        vector = T.vector()        
+        self.get_propup_vector = theano.function([vector], self.get_hidden_values(vector))
+        self.get_propup_matrix = theano.function([matrix], self.get_hidden_values(matrix))
+        matrix_maxpool = T.matrix()
+        self.get_maxpool = theano.function([matrix_maxpool], T.max(self.get_hidden_values(matrix_maxpool), axis=0))
 
     def get_corrupted_input(self, input, corruption_level):
         """This function keeps ``1-corruption_level`` entries of the inputs the
@@ -167,6 +176,8 @@ class SparseAutoencoder(object):
                                          p=1 - corruption_level,
                                          dtype=theano.config.floatX) * input
 
+    def activate_function(self, arg):
+        return T.tanh(arg)
     def get_hidden_values(self, input):
         """ Computes the values of the hidden layer """
         return T.nnet.sigmoid(T.dot(input, self.W) + self.b)
@@ -182,36 +193,18 @@ class SparseAutoencoder(object):
         """ This function computes the cost and the updates for one trainng
         step of the dA """
 
-        tilde_x = self.get_corrupted_input(self.x, corruption_level)
+        tilde_x = self.get_corrupted_input(self.input, corruption_level)
         y = self.get_hidden_values(tilde_x)
         z = self.get_reconstructed_input(y)
-        # note : we sum over the size of a datapoint; if we are using
-        #        minibatches, L will be a vector, with one entry per
-        #        example in minibatch
-        # L = - T.sum(self.x * T.log(z) + (1 - self.x) * T.log(1 - z), axis=1)
-        # note : L is now a vector, where each element is the
-        #        cross-entropy cost of the reconstruction of the
-        #        corresponding example of the minibatch. We need to
-        #        compute the average of all these to get the cost of
-        #        the minibatch
-        # cost = T.mean(L)
 
-        # rho=(1.0/self.m)*T.sum(a2[1:,:],axis=1)
+        L = - T.sum(self.input * T.log(z) + (1 - self.input) * T.log(1 - z), axis=1)
 
+        cost = T.mean(L)
+
+        l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
         
-        def cross_entropy(x, z):
-            return - T.sum(self.x * T.log(z) + (1 - self.x) * T.log(1 - z), axis=1)
-        def l2():
-            return self.beta * T.sum(self.W ** 2)
-        def KL(p, p_hat):
-            # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-            return self.beta * 10000 * T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
-
-        p_hat = T.mean( y, axis = 1 )
-        cost = cross_entropy(self.x, z)
-        cost += l2()
-        cost += KL(self.p, p_hat)
-        cost = T.mean(cost)
+        # cost += l2_w
+        cost += l2_h
 
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters
@@ -222,6 +215,32 @@ class SparseAutoencoder(object):
             updates.append((param, param - learning_rate * gparam))
 
         return (cost, updates)
+
+    def get_norm_penalty(self, x, isUpdate=True):
+
+        def l1(param):
+            return T.sum(T.abs(param))
+        def l2(param):
+            return T.sum(param ** 2)
+        def l2_a0(param):
+            return T.sum(param ** 2)
+        def KL(p, p_hat):
+            return T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
+
+        l2_w = 0
+        l2_h = 0
+        # l1_w = l1(self.W)
+        l2_w = self.reg_weight * l2(self.W)
+        # l2_w = 0
+        # l2_h = self.reg_weight * l2(self.get_propup_matrix(x))
+        # l2_h = 0
+        # l1_h = l1(self.get_propup_matrix(x))
+        if isUpdate == True:
+            l2_h = self.reg_weight * l2(self.get_hidden_values(x))
+        else:
+            l2_h = self.reg_weight * l2(self.get_propup_matrix(x))
+        
+        return l2_w, l2_h
     def output_params(self):
         print 
         W = numpy.asarray(self.W.get_value())
@@ -233,12 +252,13 @@ class SparseAutoencoder(object):
             'b_vis' : b_vis,
             'n_visible' : self.n_visible,
             'n_hidden' : self.n_hidden,
-            'weight_reg' : self.weight_reg,
+            'reg_weight' : self.reg_weight,
             'p' : self.p,
             'sp_penalty' : self.sp_penalty,
             'beta' : self.beta,
             'epoch' : self.epoch,
-            'theano_rng' : self.theano_rng
+            'theano_rng' : self.theano_rng,
+            'corruption_level' : self.corruption_level
 
         }
         return params
@@ -246,7 +266,7 @@ class SparseAutoencoder(object):
         # self.b_prime = theano.shared(numpy.asarray(self.b_prime))
         # self.n_visible = n_visible
         # self.n_hidden = n_hidden
-        # self.weight_reg = weight_reg
+        # self.reg_weight = reg_weight
         # self.p = p
         # self.sp_penalty = sp_penalty
         # self.beta = beta
@@ -300,7 +320,7 @@ def train_sae(input=None, model=None, dataset=None, learning_rate=1e-2, training
     # sae = SparseAutoencoder(numpy_rng=rng, theano_rng=theano_rng, input=x,
     #         n_visible=dataset.phase1_input_size, n_hidden=n_hidden)
 
-    cost, updates = model.get_cost_updates(corruption_level=0.8,
+    cost, updates = model.get_cost_updates(corruption_level=model.corruption_level,
                                         learning_rate=learning_rate)
 
     trainer = theano.function([index], cost, updates=updates,
@@ -313,29 +333,37 @@ def train_sae(input=None, model=None, dataset=None, learning_rate=1e-2, training
     ############
     print 'write file: ' + outdir
     # go through training epochs
-    def l2():
-        return model.beta * T.sum(model.W ** 2).eval()
-    def KL(p, p_hat):
-        # return T.sum(- (p / p_hat) + ((1 - p) / (1 - p_hat)))
-        return 10000 * model.beta * numpy.sum((p * numpy.log(p / p_hat)) + ((1 - p) * numpy.log((1 - p) / (1 - p_hat))))
+    
+    x_example = dataset.get_batch_design(0, 3000, dataset.phase1['valid']).eval()
 
     for epoch in xrange(training_epochs):
         # go through trainng set
-        c = []
+        mean_cost = []
         previous_cost = 0
         for batch_index in xrange(n_train_batches):
-            test_propup = model.get_hidden_values(dataset.get_batch_design(0, 100, dataset.phase1['valid'])).eval()
-            msg = ('%s   epoch : %d, batch : %d, cost : %.2f, cost diff: %.3f, l2: %.2f, KL: %.2f, sparsity: %.2f, max-min: %.2f, std: %.2f, output: %s'
-                  % (str(datetime.datetime.now()), model.epoch, batch_index, numpy.mean(c), numpy.mean(c) - previous_cost,
-                    l2(), float(KL(0.02, test_propup.mean())),
-                    test_propup.mean(), (test_propup.max(axis=0) - test_propup.min(axis=0)).mean(), 
-                    test_propup.std(axis=0).mean(), outdir.split('/')[len(outdir.split('/')) - 1]))
-            print msg
-            # sys.stdout.write("\r%s" % msg)
-            # sys.stdout.flush()
-            # # print T.mean(sae.get_hidden_values(dataset.get_batch_design(0, 100, dataset.valid))).eval()
-            c.append(trainer(batch_index))
-            previous_cost = numpy.mean(c)
+            while(True):
+                try:
+                    mean_cost.append(trainer(batch_index))
+                    msg = '%s e: %d, b: %d, c: %.2f, '% (str(datetime.datetime.now().strftime("%m/%d %H:%M")), epoch, batch_index, numpy.mean(mean_cost))
+                    if batch_index % 10 == 0:
+                        # test_propup = model.get_hidden_values(dataset.get_batch_design(0, 100, dataset.phase1['valid'])).eval()
+                        test_propup = model.get_propup_matrix(x_example)
+                        msg += 'sp: %.2f, mm: %.2f~%.2f, ' % (test_propup.mean(axis=1).mean(), test_propup.max(axis=0).mean(), test_propup.min(axis=0).mean())
+                        msg += '%s' % str(numpy.histogram(test_propup.mean(axis=0), range=[0,1])[0])
+                        # msg = ('%s   epoch : %d, batch : %d, cost : %.2f, cost diff: %.3f, l2: %.2f, KL: %.2f, sparsity: %.2f, max-min: %.2f, std: %.2f, output: %s'
+                        #       % (str(datetime.datetime.now()), model.epoch, batch_index, numpy.mean(c), numpy.mean(c) - previous_cost,
+                        #         l2(), float(KL(0.02, test_propup.mean())),
+                        #         test_propup.mean(), (test_propup.max(axis=0) - test_propup.min(axis=0)).mean(), 
+                        #         test_propup.std(axis=0).mean(), outdir.split('/')[len(outdir.split('/')) - 1]))
+                   
+                    sys.stdout.write("\r%s" % msg)
+                    sys.stdout.flush()
+                    break
+                    # # print T.mean(sae.get_hidden_values(dataset.get_batch_design(0, 100, dataset.valid))).eval()
+                    
+                except KeyboardInterrupt:
+                    pdb.set_trace()
+                
         model.epoch += 1
         params = model.output_params()
         print

@@ -12,49 +12,36 @@ from theano.tensor.shared_randomstreams import RandomStreams
 sys.path.extend(['/home/fujikawa/lib/python/other/pylearn2/pylearn2', '/home/fujikawa/StockPredict/src/deeplearning/dataset'])
 
 # import my library
-#from XOR import XOR
-from dataset.Nikkei import Nikkei
+from XOR import XOR
+from Nikkei import Nikkei
 
 # activate_function = T.nnet.sigmoid
-def activate_function(arg):
-    return T.nnet.sigmoid(arg)
+
     # return T.nnet.sigmoid(arg) - T.cast(0.5, dtype=theano.config.floatX)
 
 class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
     def __init__(self, input=None, n_visible=784, n_hidden=500, \
         W=None, hbias=None, vbias=None, numpy_rng=None,
-        theano_rng=None, params=None, reg_weight=0):
-        """
-        RBM constructor. Defines the parameters of the model along with
-        basic operations for inferring hidden from visible (and vice-versa),
-        as well as for performing CD updates.
-
-        :param input: None for standalone RBMs or symbolic variable if RBM is
-        part of a larger graph.
-
-        :param n_visible: number of visible units
-
-        :param n_hidden: number of hidden units
-
-        :param W: None for standalone RBMs or symbolic variable pointing to a
-        shared weight matrix in case RBM is part of a DBN network; in a DBN,
-        the weights are shared between RBMs and layers of a MLP
-
-        :param hbias: None for standalone RBMs or symbolic variable pointing
-        to a shared hidden units bias vector in case RBM is part of a
-        different network
-
-        :param vbias: None for standalone RBMs or a symbolic variable
-        pointing to a shared visible units bias
-        """
+        theano_rng=None, params=None, reg_weight=0, corruption_level=0):
+        
 
         numpy_rng = numpy.random.RandomState(123)
         theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
         self.reg_weight = reg_weight
+        self.corruption_level = corruption_level
+        self.n_visible = n_visible
+        self.n_hidden = n_hidden
+        self.epoch = 0
         if params != None:
             if 'beta' in params:
                 self.reg_weight = params['beta']
+            if 'activate_function' in params:
+                print 'load activate_function'
+                self.activate_function = params['activate_function']
+            if 'corruption_level' in params:
+                print 'load corruption_level'
+                self.corruption_level = params['corruption_level']
             W = theano.shared(params['W'], name='W', borrow=True)
             hbias = theano.shared(params['hbias'], name='hbias', borrow=True)
             vbias = theano.shared(params['vbias'], name='vbias', borrow=True)
@@ -63,11 +50,7 @@ class RBM(object):
             self.epoch = params['epoch']
             # theano_rng = params['theano_rng']
 
-        else:
-
-            self.n_visible = n_visible
-            self.n_hidden = n_hidden
-            self.epoch = 0
+            
         print self.reg_weight
         if numpy_rng is None:
             # create a number generator
@@ -83,9 +66,9 @@ class RBM(object):
             # converted using asarray to dtype theano.config.floatX so
             # that the code is runable on GPU
             initial_W = numpy.asarray(numpy_rng.uniform(
-                      # low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
-                      low=0,
-                      high=8 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                      low=-4 * numpy.sqrt(6. / (n_hidden + n_visible)),
+                      # low=0,
+                      high=4 * numpy.sqrt(6. / (n_hidden + n_visible)),
                       size=(n_visible, n_hidden)),
                       dtype=theano.config.floatX)
             # theano shared variables for weights and biases
@@ -122,7 +105,16 @@ class RBM(object):
         matrix_maxpool = T.matrix()
         self.get_maxpool = theano.function([matrix_maxpool], T.max(self.propup(matrix_maxpool)[1], axis=0))
         # self.get_maxpool = numpy.max(self.get_propup_matrix, axis=0)
+    def activate_function(self, arg):
+        
+        def num(n):
+            return T.cast(n, dtype=theano.config.floatX)
+        
+        return T.nnet.sigmoid(arg)
+        return num(0.99999) * T.tanh(arg + T.cast(0.0001, dtype=theano.config.floatX))
+        return (num(1.999) * (T.nnet.sigmoid(arg + num(0.00001)) - num(0.5)))
 
+        
     def free_energy(self, v_sample):
         ''' Function to compute the free energy '''
         wx_b = T.dot(v_sample, self.W) + self.hbias
@@ -142,7 +134,7 @@ class RBM(object):
 
         '''
         pre_sigmoid_activation = T.dot(vis, self.W) + self.hbias
-        return [pre_sigmoid_activation, activate_function(pre_sigmoid_activation)]
+        return [pre_sigmoid_activation, self.activate_function(pre_sigmoid_activation)]
 
     def sample_h_given_v(self, v0_sample):
         ''' This function infers state of hidden units given visible units '''
@@ -170,7 +162,7 @@ class RBM(object):
 
         '''
         pre_sigmoid_activation = T.dot(hid, self.W.T) + self.vbias
-        return [pre_sigmoid_activation, activate_function(pre_sigmoid_activation)]
+        return [pre_sigmoid_activation, self.activate_function(pre_sigmoid_activation)]
 
     def sample_v_given_h(self, h0_sample):
         ''' This function infers state of visible units given hidden units '''
@@ -201,7 +193,7 @@ class RBM(object):
         return [pre_sigmoid_h1, h1_mean, h1_sample,
                 pre_sigmoid_v1, v1_mean, v1_sample]
 
-    def get_cost_updates(self, lr=0.1, persistent=None, k=1):
+    def get_cost_updates(self, lr=0.1, persistent=None, k=1, corruption_level=0):
         """This functions implements one step of CD-k or PCD-k
 
         :param lr: learning rate used to train the RBM
@@ -218,25 +210,14 @@ class RBM(object):
         chain, if one is used.
 
         """
-        # return theano.shared([[1,1,1], [1,1]]), [theano.shared([[1,1,1], [1,1]]),theano.shared([[1,1,1], [1,1]])] 
+        tilde_x = self.get_corrupted_input(self.input, corruption_level)
 
-        # compute positive phase
         pre_sigmoid_ph, ph_mean, ph_sample = self.sample_h_given_v(self.input)
-
-        # decide how to initialize persistent chain:
-        # for CD, we use the newly generate hidden sample
-        # for PCD, we initialize from the old state of the chain
         if persistent is None:
             chain_start = ph_sample
         else:
             chain_start = persistent
 
-        # perform actual negative phase
-        # in order to implement CD-k/PCD-k we need to scan over the
-        # function that implements one gibbs step k times.
-        # Read Theano tutorial on scan for more information :
-        # http://deeplearning.net/software/theano/library/scan.html
-        # the scan will return the entire Gibbs chain
         [pre_sigmoid_nvs, nv_means, nv_samples,
          pre_sigmoid_nhs, nh_means, nh_samples], updates = \
             theano.scan(self.gibbs_hvh,
@@ -252,33 +233,26 @@ class RBM(object):
 
         l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
         cost = T.mean(self.free_energy(self.input)) - T.mean(self.free_energy(chain_end))
-        # cost += self.reg_weight * 0.1 * T.sum(T.mean(activate_function(T.dot(self.input, self.W) + self.hbias), axis=0))
-        # cost += self.reg_weight * T.sum(T.mean(activate_function(T.dot(self.input, self.W) + self.hbias), axis=0) ** 2)
-        # cost += self.reg_weight * 0.5 * T.sum(T.mean(self.propup(self.input)[1], axis=0))
-        cost += l2_w
+        
+        # cost += l2_w
         cost += l2_h
-        # cost += 0.001 * self.reg_weight * T.sum((1 - T.max(self.propup(self.input)[1], axis=0)) ** 2)
-        # cost += self.reg_weight * cross_entropy(5e-3, T.mean(T.mean(self.sample_h_given_v(self.input)[2], axis=0)))
-        # cost += l2() 
-        # cost += KL(0.02, T.mean(ph_mean))
         # We must not compute the gradient through the gibbs sampling
         gparams = T.grad(cost, self.params, consider_constant=[chain_end])
 
         # constructs the update dictionary
         i = 0
         for gparam, param in zip(gparams, self.params):
-            if i == 0:
-            # # make sure that the learning rate is of the right dtype
-            #     param_fixed = param - gparam * T.cast(lr, dtype=theano.config.floatX)
-            #     param_fixed = (param_fixed + abs(param_fixed)) / 2
-            #     updates[param] = param_fixed
-                param_fixed = param - gparam * T.cast(lr, dtype=theano.config.floatX)
-                param_fixed = (param_fixed - param_fixed.min(axis=0)) ** 2
-                param_fixed /= (param_fixed.max(axis=0) + 0.001)
-                updates[param] = param_fixed
-            else:
-                updates[param] = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+            def norm_plus(parameter):
+                return (parameter - parameter.min(axis=0))
+            def norm_max(parameter):
+                return parameter.max(axis=0) * ((parameter - parameter.min(axis=0)) / ((parameter - parameter.min(axis=0)).max(axis=0) + 0.001))
+            
+            # param_fixed = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+            # tmp_param = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+            # updates[param] = norm_max(tmp_param)
             i += 1
+            updates[param] = param - gparam * T.cast(lr, dtype=theano.config.floatX)
+            
         if persistent:
             # Note that this works only if persistent is a shared variable
             updates[persistent] = nh_samples[-1]
@@ -297,21 +271,22 @@ class RBM(object):
             return T.sum(T.abs(param))
         def l2(param):
             return T.sum(param ** 2)
-        def l2_a0(param):
-            return T.sum(param ** 2)
+        
         def KL(p, p_hat):
             return T.sum((p * T.log(p / p_hat)) + ((1 - p) * T.log((1 - p) / (1 - p_hat))))
 
+        l2_w = 0
+        l2_h = 0
         # l1_w = l1(self.W)
         l2_w = self.reg_weight * l2(self.W)
-        l2_h = 0
+        # l2_w = 0
+        # l2_h = self.reg_weight * l2(self.get_propup_matrix(x))
+        # l2_h = 0
         # l1_h = l1(self.get_propup_matrix(x))
-        # if isUpdate == True:
-        #     l2_h = 0
-        #     # l2_h = self.reg_weight * l2(self.propup(x)[1])
-        # else:
-        #     l2_h = 0
-        #     # l2_h = 0 * self.reg_weight * l2(self.get_propup_matrix(x))
+        if isUpdate == True:
+            l2_h = self.reg_weight * l2(self.propup(x)[1])
+        else:
+            l2_h = self.reg_weight * l2(self.get_propup_matrix(x))
         
         return l2_w, l2_h
 
@@ -337,7 +312,7 @@ class RBM(object):
         fe_xi_flip = self.free_energy(xi_flip)
 
         # equivalent to e^(-FE(x_i)) / (e^(-FE(x_i)) + e^(-FE(x_{\i})))
-        cost = T.mean(self.n_visible * T.log(activate_function(fe_xi_flip -
+        cost = T.mean(self.n_visible * T.log(self.activate_function(fe_xi_flip -
                                                             fe_xi)))
 
         # increment bit_i_idx % number as part of updates
@@ -346,38 +321,10 @@ class RBM(object):
         return cost
 
     def get_reconstruction_cost(self, updates, pre_sigmoid_nv):
-        """Approximation to the reconstruction error
-
-        Note that this function requires the pre-sigmoid activation as
-        input.  To understand why this is so you need to understand a
-        bit about how Theano works. Whenever you compile a Theano
-        function, the computational graph that you pass as input gets
-        optimized for speed and stability.  This is done by changing
-        several parts of the subgraphs with others.  One such
-        optimization expresses terms of the form log(sigmoid(x)) in
-        terms of softplus.  We need this optimization for the
-        cross-entropy since sigmoid of numbers larger than 30. (or
-        even less then that) turn to 1. and numbers smaller than
-        -30. turn to 0 which in terms will force theano to compute
-        log(0) and therefore we will get either -inf or NaN as
-        cost. If the value is expressed in terms of softplus we do not
-        get this undesirable behaviour. This optimization usually
-        works fine, but here we have a special case. The sigmoid is
-        applied inside the scan op, while the log is
-        outside. Therefore Theano will only see log(scan(..)) instead
-        of log(sigmoid(..)) and will not apply the wanted
-        optimization. We can not go and replace the sigmoid in scan
-        with something else also, because this only needs to be done
-        on the last step. Therefore the easiest and more efficient way
-        is to get also the pre-sigmoid activation as an output of
-        scan, and apply both the log and sigmoid outside scan such
-        that Theano can catch and optimize the expression.
-
-        """        
 
         cross_entropy = T.mean(
-                T.sum(self.input * T.log(activate_function(pre_sigmoid_nv)) +
-                (1 - self.input) * T.log(1 - activate_function(pre_sigmoid_nv)),
+                T.sum(self.input * T.log(self.activate_function(pre_sigmoid_nv)) +
+                (1 - self.input) * T.log(1 - self.activate_function(pre_sigmoid_nv)),
                       axis=1))
 
 
@@ -395,10 +342,18 @@ class RBM(object):
             'n_visible' : self.n_visible,
             'n_hidden' : self.n_hidden,
             'epoch' : self.epoch,
-            'beta' : self.reg_weight
+            'beta' : self.reg_weight,
+            # 'activate_function' : self.activate_function,
+            'corruption_level' : self.corruption_level
             # 'theano_rng' : self.theano_rng
         }
         return params
+
+    def get_corrupted_input(self, input, corruption_level):
+        
+        return  self.theano_rng.binomial(size=input.shape, n=1,
+                                         p=1 - corruption_level,
+                                         dtype=theano.config.floatX) * input
 
 
 def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=200,
@@ -451,7 +406,7 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
 
     # get the cost and the gradient corresponding to one step of CD-15
     cost, updates = model.get_cost_updates(lr=learning_rate,
-                                         persistent=None, k=k)
+                                         persistent=None, k=k, corruption_level=model.corruption_level)
 
     #################################
     #     Training the RBM          #
@@ -485,7 +440,8 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
     plotting_time = 0.
     start_time = time.clock()
 
-    x_example = dataset.get_batch_design(0, 2500, dataset.phase1['valid']).eval()
+    x_example = dataset.get_batch_design(0, 3000, dataset.phase1['valid']).eval()
+
     # pdb.set_trace()
 
     # l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
@@ -502,11 +458,15 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
                 try:
                     mean_cost += [trainer(batch_index)]
                     msg = '%s e: %d, b: %d, c: %.2f, '% (str(datetime.datetime.now().strftime("%m/%d %H:%M")), epoch, batch_index, numpy.mean(mean_cost))
-                    if batch_index % 30 == 0:
-                        l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
+
+                    
+                    if batch_index % 10 == 0:
+                        # l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
                         test_propup = model.get_propup_matrix(x_example)
                         # msg += 'l2_w: %.2f, l2_h: %.2f, ' % (float(l2_w.eval()), float(l2_h.eval()))
-                        msg += 'l2_w: %.2f, ' % (float(l2_w.eval()))
+                        # msg += 'l2_h: %.2f, ' % (float(l2_h.eval()))
+                        # pdb.set_trace()
+                        # msg += 'W: %.2f, ' % model.W.eval().mean() 
                         msg += 'sp: %.2f, mm: %.2f~%.2f, ' % (test_propup.mean(axis=1).mean(), test_propup.max(axis=0).mean(), test_propup.min(axis=0).mean())
                         msg += '%s' % str(numpy.histogram(test_propup.mean(axis=0), range=[0,1])[0])
                         # pdb.set_trace()
