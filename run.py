@@ -1,7 +1,12 @@
 # coding: utf-8
 
-import cPickle, json, pdb, pickle, theano, sys, numpy, time, os
+import cPickle, json, pdb, pickle, theano, sys, time, os
+import numpy as np
 import sklearn.decomposition
+from sklearn.svm import SVR
+from sklearn.svm import LinearSVC as SVC
+from sklearn.decomposition import PCA
+from sklearn.grid_search import GridSearchCV
 import os.path
 import copy
 import theano.tensor as T
@@ -29,12 +34,13 @@ default_model_dir = 'experiment/Model'
 dataset_type = 'test' # ['all' / 'chi2_selected']
 
 params = {
-    'experiment_type' : 'baseline',
+    'experiment_type' : 'proposed',
     'STEP1' : {
-        'beta' : 1.,
+        'reg_weight' : 1.,
         'model' : 'sae',
         'n_hidden' : 1000,
-        'learning_rate' : 0.05
+        'learning_rate' : 0.05,
+        'corruption_level' : 0.5
     },
     'STEP3' : {
         'brandcode' : '0101'
@@ -46,12 +52,12 @@ params = {
         'hidden_layers_sizes' : [2500, 2500],
         'pretrain' : {
             'batch_size' : 50,
-            'learning_rate' : 0.05,
+            'learning_rate' : 0.01,
             'epochs' : 100
         },
         'finetune' : {
             'batch_size' : 50,
-            'learning_rate' : 0.0001,
+            'learning_rate' : 0.01,
             'epochs' : 200
         }
     }
@@ -139,16 +145,31 @@ def msg_loop(stdscr):
                 stdscr.addstr(msg)
     if x == 3:
         while True:
-            msg = '**  ' + initial_msg[x] + '\n\n'
+            msg = '**  ' + initial_msg[x] + '\n'
+            msg += '利用するデータセットのタイプを選択して下さい．\n'
+            msg += '1: proposed, 2: baseline\n'
+            stdscr.addstr(msg)
+            d = int(stdscr.getstr())
+            if d == 1:
+                params['experiment_type'] = 'proposed'
+            else:
+                params['experiment_type'] = 'baseline'
+            stdscr.clear()
+            
+            msg = '**  ' + initial_msg[x] + '\n'
+            msg += '**  ' + params['experiment_type'] + '\n'
             msg += '\n'.join(labeltype_msg) + '\n'
             stdscr.addstr(msg)
             l = int(stdscr.getstr())
             stdscr.clear()
+
             msg = '**  ' + initial_msg[x] + '\n'
+            msg += '**  ' + params['experiment_type'] + '\n'
             msg += '**  ' + labeltype_msg[l] + '\n\n'
             msg += '以下から予測モデルに利用するモデルを選択して下さい．\n'
-            msg += '1: SdA_regression, 2: DBN_regression, 3: SdA_RNN\n'
+            msg += '1: SdA_regression, 2: DBN_regression, 3: SdA_RNN, 0: SVR\n'
             stdscr.addstr(msg)
+            
             m = int(stdscr.getstr())
             curses.flushinp()
             stdscr.clear()
@@ -178,10 +199,10 @@ def build_CompressModel():
     index = T.lscalar()    # index to a [mini]batch
     x = T.matrix('x')  # the data is presented as rasterized images
     if params['STEP1']['model'] == 'rbm':
-        model = RBM(input=x, n_visible=dataset.phase1_input_size, n_hidden=params['STEP1']['n_hidden'], reg_weight=params['STEP1']['beta'])
+        model = RBM(input=x, n_visible=dataset.phase1_input_size, n_hidden=params['STEP1']['n_hidden'], reg_weight=params['STEP1']['reg_weight'], corruption_level=params['STEP1']['corruption_level'])
         train_rbm(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], outdir=model_dirs['STEP1'])
     else:
-        model = SparseAutoencoder(input=x, n_visible=dataset.phase1_input_size, n_hidden=params['STEP1']['n_hidden'], beta=params['STEP1']['beta'])
+        model = SparseAutoencoder(input=x, n_visible=dataset.phase1_input_size, n_hidden=params['STEP1']['n_hidden'], reg_weight=params['STEP1']['reg_weight'], corruption_level=params['STEP1']['corruption_level'])
         train_sae(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], outdir=model_dirs['STEP1'])
 
 def retrain_CompressModel():
@@ -233,9 +254,9 @@ def reguralize_data(dataset, brandcodes):
             dataset.phase2[datatype][brandcode] /= dataset.phase2[datatype][brandcode].max()
         if theano.config.floatX == 'float32':
             print 'cast to 32bit matrix'
-            dataset.phase2[datatype]['x'] = dataset.phase2[datatype]['x'].astype(numpy.float32)
+            dataset.phase2[datatype]['x'] = dataset.phase2[datatype]['x'].astype(np.float32)
             for brandcode in brandcodes:
-                dataset.phase2[datatype][brandcode] = dataset.phase2[datatype][brandcode].astype(numpy.float32)
+                dataset.phase2[datatype][brandcode] = dataset.phase2[datatype][brandcode].astype(np.float32)
 
 def change_brand(dataset, brandcode):
     for datatype in ['train', 'valid', 'test']:
@@ -253,42 +274,86 @@ def set_model_params(model, params):
     return model
 
 
-def predict(dataset, model, brandcodes=['0101'], label_type=1):
+def predict(dataset, model, brandcodes=['0101'], label_type=1, model_type=1):
     print 'STEP 3 start...'
     if dataset == None:
         if params['experiment_type'] == 'baseline':
             print 'start to load baseline dataset...'
             dataset = cPickle.load(open(default_model_dir + '/STEP2/baseline_original'))
+            print 'start to unify stockprice...'
+            dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type)
         else:
             print 'start to load proposed dataset...'
             dataset = cPickle.load(open(model_dirs['STEP2']))
-    print 'start to unify stockprice...'
-    # dataset.unify_stockprices(dataset=dataset.unified, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type)
-    dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes, dataset_type=params['experiment_type'])
-    reguralize_data(dataset, brandcodes)
+            print 'start to unify stockprice...'
+            dataset.unify_stockprices(dataset=dataset.unified, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type)
+    
+    
+    
+    if params['experiment_type'] != 'baseline':
+        reguralize_data(dataset, brandcodes)
     change_brand(dataset, '0101')
-    pretrain_params = {
-        'dataset' : dataset, 
-        'hidden_layers_sizes' : params['STEP4']['hidden_layers_sizes'],
-        'pretrain_lr' : params['STEP4']['pretrain']['learning_rate'],
-        'pretrain_batch_size' : params['STEP4']['pretrain']['batch_size'],
-        'pretrain_epochs' : params['STEP4']['pretrain']['epochs'],
-        'corruption_levels' : params['STEP4']['corruption_levels'],
-        'k' : params['STEP4']['k']
-    }
-    pretrain_model = model.pretrain(pretrain_params)
-    pretrain_params = get_model_params(pretrain_model)
-    while(1):
-        finetune_params = {
-            'dataset' : dataset,
-            'model' : pretrain_model,
-            'finetune_lr' : params['STEP4']['finetune']['learning_rate'],
-            'finetune_batch_size' : params['STEP4']['finetune']['batch_size'],
-            'finetune_epochs' : params['STEP4']['finetune']['epochs']
+
+    if model_type == 0:
+        def transformY(data_y):
+            y = []
+            for data in data_y:
+                y.append(data[0])
+            return np.array(y)
+        train_x = dataset.phase2['train']['x']
+        train_x = np.append(train_x, dataset.phase2['valid']['x'], 0)
+        test_x = dataset.phase2['test']['x']
+        while(1):
+            
+            if params['experiment_type'] == 'baseline':
+                train_x_original = train_x
+                test_x_original = test_x
+                pca = PCA(n_components=1000)
+                pca.fit(train_x_original)
+                train_x = pca.transform(train_x_original)
+                test_x = pca.transform(test_x_original)
+                    
+            train_y = transformY(dataset.phase2['train']['y'])
+            train_y = np.append(train_y, transformY(dataset.phase2['valid']['y']), 0)
+            test_y = transformY(dataset.phase2['test']['y'])
+
+            
+            if label_type < 3:
+                tuned_parameters = [{'kernel': ['rbf'], 'gamma': [10**i for i in range(-4,0)], 'C': [10**i for i in range(0,4)]}]
+                gscv = GridSearchCV(SVR(), tuned_parameters, cv=5, scoring="mean_squared_error", n_jobs=10)
+            else:
+                print 'classification'
+                tuned_parameters = [{'C': [10**i for i in range(0,4)]}]
+                gscv = GridSearchCV(SVC(), tuned_parameters, cv=5, n_jobs=-1)
+            gscv.fit(train_x, train_y)
+            best_svr = gscv.best_estimator_
+            predict_y = best_svr.predict(test_x)
+            print (predict_y == test_y).sum()
+            pdb.set_trace()
+
+    else:
+        pretrain_params = {
+            'dataset' : dataset, 
+            'hidden_layers_sizes' : params['STEP4']['hidden_layers_sizes'],
+            'pretrain_lr' : params['STEP4']['pretrain']['learning_rate'],
+            'pretrain_batch_size' : params['STEP4']['pretrain']['batch_size'],
+            'pretrain_epochs' : params['STEP4']['pretrain']['epochs'],
+            'corruption_levels' : params['STEP4']['corruption_levels'],
+            'k' : params['STEP4']['k']
         }
-        finetune_model, best_validation_loss, test_score, best_epoch = model.finetune(finetune_params)
-        pdb.set_trace()
-        set_model_params(pretrain_model, pretrain_params)
+        pretrain_model = model.pretrain(pretrain_params)
+        pre_params = get_model_params(pretrain_model)
+        while(1):
+            finetune_params = {
+                'dataset' : dataset,
+                'model' : pretrain_model,
+                'finetune_lr' : params['STEP4']['finetune']['learning_rate'],
+                'finetune_batch_size' : params['STEP4']['finetune']['batch_size'],
+                'finetune_epochs' : params['STEP4']['finetune']['epochs']
+            }
+            finetune_model, best_validation_loss, test_score, best_epoch = model.finetune(finetune_params)
+            pdb.set_trace()
+            set_model_params(pretrain_model, pre_params)
 
 
 ##############
@@ -299,22 +364,23 @@ if __name__ == '__main__':
    
     
 
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 5:
         params['STEP1']['n_hidden'] = int(sys.argv[1])
         params['STEP1']['learning_rate'] = float(sys.argv[2])
-        params['STEP1']['beta'] = float(sys.argv[3])
-        params['STEP1']['model'] = sys.argv[4]
+        params['STEP1']['reg_weight'] = float(sys.argv[3])
+        params['STEP1']['corruption_level'] = float(sys.argv[4])
+        params['STEP1']['model'] = sys.argv[5]
     else:
         print sys.argv
         print '引数が足りません．'
-        print '引数: n_hidden learning_rate beta model'
+        print '引数: n_hidden learning_rate reg_weight model'
         sys.exit()
 
     model_dirs = {
-        'STEP1' : '%s/%s/h%d_lr%s_b%s.%s.params' % (default_model_dir, 'STEP1', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['beta']), params['STEP1']['model']),
-        'STEP2' : '%s/%s/h%d_lr%s_b%s.%s' % (default_model_dir, 'STEP2', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['beta']), params['STEP1']['model']),
-        'STEP3' : '%s/%s/h%d_lr%s_b%s.%s' % (default_model_dir, 'STEP3', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['beta']), params['STEP1']['model']),
-        # 'STEP4' : '%s/%s/%sh%d_lr%.2f_b%s.%s' % (default_model_dir, 'STEP4', params['STEP3']['brandcode'], params['STEP1']['n_hidden'], params['STEP1']['learning_rate'], str(params['STEP1']['beta']), params['STEP1']['model']),
+        'STEP1' : '%s/%s/h%d_lr%s_b%s_c%s.%s' % (default_model_dir, 'STEP1', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['corruption_level']), params['STEP1']['model']),
+        'STEP2' : '%s/%s/h%d_lr%s_b%s_c%s.%s' % (default_model_dir, 'STEP2', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['corruption_level']), params['STEP1']['model']),
+        'STEP3' : '%s/%s/h%d_lr%s_b%s_c%s.%s' % (default_model_dir, 'STEP3', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['corruption_level']), params['STEP1']['model']),
+        # 'STEP4' : '%s/%s/%sh%d_lr%.2f_b%s.%s' % (default_model_dir, 'STEP4', params['STEP3']['brandcode'], params['STEP1']['n_hidden'], params['STEP1']['learning_rate'], str(params['STEP1']['reg_weight']), params['STEP1']['model']),
     }
     
     # print params
@@ -361,8 +427,11 @@ if __name__ == '__main__':
         elif m == 2:
             print 'start DBN_regression'
             model = DBN_regression
+        elif m == 0:
+            print 'start SVR'
+            model = SVR
         brandcodes = ['0101', '7203', '6758', '6502', '7201', '6501', '6702', '6753', '8058', '8031', '7751']
-        predict(dataset, model, brandcodes=brandcodes, label_type=l)
+        predict(dataset, model, brandcodes=brandcodes, label_type=l, model_type=m)
 
 
 

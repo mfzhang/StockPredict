@@ -128,7 +128,9 @@ class DBN(object):
         self.logLayer = LogisticRegression(
             input=self.sigmoid_layers[-1].output,
             n_in=hidden_layers_sizes[-1],
-            n_out=n_outs)
+            n_out=n_outs,
+            y_type=0
+            )
         
         self.get_prediction = theano.function(
 	    inputs = [self.x],

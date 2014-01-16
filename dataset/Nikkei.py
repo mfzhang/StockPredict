@@ -8,7 +8,8 @@ import json, codecs, cPickle, gzip, datetime, pdb, sys
 
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
 
-wordidset_all = "dataset/dataset/chi2-unified.wordidset"
+# wordidset_all = "dataset/dataset/chi2-unified.wordidset"
+wordidset_all = "dataset/dataset/chi2-unified-sentence.wordidset"
 
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
@@ -38,6 +39,7 @@ class Nikkei():
         """
 
         ##  データセットの読み込み
+        # print dataset_type
         datasetdir = wordidset_chi2_selected
         n_dic = 1000
         if dataset_type != 'chi2_selected':
@@ -143,11 +145,13 @@ class Nikkei():
                                         label = int((self.pricelist[brandcode][year][date]['macd_tomorrow'] - self.pricelist[brandcode][year][date]['macd']) > 0)
                                     if brandcode not in self.phase2[datatype]:
                                         self.phase2[datatype][brandcode] = []
+                                    
                                     if label_type < 3:
                                         self.phase2[datatype][brandcode].append([label])
                                     else:
                                         self.phase2[datatype][brandcode].append(label)
 
+            # pdb.set_trace()
 
             if dataset_type == 'chi2_selected':
                 self.phase2[datatype]['x'] = self.get_numpy_dense_design(self.phase2[datatype]['x'])
@@ -232,19 +236,16 @@ class Nikkei():
                 vectors = self.get_numpy_dense_design(self.raw_data[year][date])
 
                 vectors_baseline = np.max(vectors, axis=0)
-                if model_type == 'rbm':
+
                     # pdb.set_trace()
-                    daily_vector = model.get_maxpool(vectors)
-                    # self.unified[year][date] = model.propup(vectors)[1]
-                    # daily_vector = np.array(np.max(model.propup(vectors)[1].eval(), axis=0))
-                    daily_vector_baseline = model.get_propup_vector(vectors_baseline)
-                # else:
-                    # daily_vector = np.max(model.get_hidden_values(vectors).eval(), axis=0)
-                    # daily_vector_baseline = np.array(model.get_hidden_values(vectors_baseline).eval())
+                daily_vector = model.get_maxpool(vectors)
+                # self.unified[year][date] = model.propup(vectors)[1]
+                # daily_vector = np.array(np.max(model.propup(vectors)[1].eval(), axis=0))
+                # daily_vector_baseline = model.get_propup_vector(vectors_baseline)
                 # pdb.set_trace()
-                self.baseline[year][date] = daily_vector_baseline
-                self.baseline_original[year][date] = vectors_baseline
+                self.baseline[year][date] = vectors_baseline
                 self.unified[year][date] = daily_vector
+            pdb.set_trace()
         #if experiment_type == 'baseline':
             #self.raw_data = None
             #self.trainset, self.validset, self.testset = [], [], []
@@ -284,35 +285,7 @@ class Nikkei():
                 ex_array.append(a2)
         return ex_array
 
-    # def _makeIdlistDataset(self):
-    #     bowfeatures = open(bowfeaturedir)
-    #     line = bowfeatures.readline()
-    #     vectors = {}
-    #     i = 0
-    #     threshold = 1000
-    #     while(line):
-    #         # if i > threshold: break;
-    #         i += 1
-    #         date, kiji_id, wordid_list = line.strip().split('\t')
-    #         year, month, day = date.strip().split('-')
-    #         dt = datetime.date(int(year), int(month), int(day))
-    #         if int(year) not in vectors:
-    #             vectors[int(year)] = {}
-    #         if dt not in vectors[int(year)]:
-    #             vectors[int(year)][dt] = []
-    #         vectors[int(year)][dt].append(map(int, wordid_list.split(',')))
-    #         line = bowfeatures.readline()
-    #     return vectors
-
-    # def _idlists2VectorData(self, idlists):
-    #     vectors = []
-    #     for idlist in idlists:
-    #         vector = [0 for i in range(1000)]
-    #         for id in idlist:
-    #             vector[int(id)] = 1
-    #         vectors.append(vector)
-    #     return vectors
-    
+   
 
 if __name__ == '__main__':
     pass

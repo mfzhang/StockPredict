@@ -378,8 +378,8 @@ def finetune(finetune_params):
 
     print '... finetunning the model'
     # early-stopping parameters
-    patience = 20 * n_train_batches  # look as this many examples regardless
-    patience_increase = 5.  # wait this much longer when a new best is
+    patience = 50 * n_train_batches  # look as this many examples regardless
+    patience_increase = 20.  # wait this much longer when a new best is
                             # found
     improvement_threshold = 0.999  # a relative improvement of this much is
                                    # considered significant
