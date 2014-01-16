@@ -26,7 +26,8 @@ numpy.random.seed(0xbeef)
 rng = RandomStreams(seed=numpy.random.randint(1 << 30))
 theano.config.warn.subtensor_merge_bug = False
 
-class stackRnnRbm(object):
+class RNNRBM_MLP(object):
+#class stackRnnRbm(object):
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
                  hidden_layers_sizes=[500], hidden_recurrent=150, n_outs=1):
@@ -249,7 +250,7 @@ def train_rnnrbm(dataset=None, hidden_layers_sizes=[500], hidden_recurrent=150,
     numpy_rng = numpy.random.RandomState(123)
     print '... building the model'
 
-    rnnrbm = stackRnnRbm(numpy_rng=numpy_rng, n_ins=dataset.phase2_input_size,
+    rnnrbm = RNNRBM_MLP(numpy_rng=numpy_rng, n_ins=dataset.phase2_input_size,
                          hidden_layers_sizes=hidden_layers_sizes,
                          hidden_recurrent=hidden_recurrent, n_outs=2)
     

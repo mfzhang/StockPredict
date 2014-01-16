@@ -31,7 +31,7 @@ class DBN(object):
     """
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
-                 hidden_layers_sizes=[500, 500], n_outs=1):
+                 hidden_layers_sizes=[500, 500], n_outs=1, y_type=1):
         """This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -65,7 +65,10 @@ class DBN(object):
 
         # allocate symbolic variables for the data
         self.x = T.matrix('x')  # the data is presented as rasterized images
-        self.y = T.ivector('y')  # the labels are presented as 1D vector
+        if y_type==0:
+            self.y = T.matrix('y')  # the labels are presented as 1D vector
+        else: 
+            self.y = T.ivector('y')  # the labels are presented as 1D vector
                                  # of [int] labels
 
         # The DBN is an MLP, for which all weights of intermediate
@@ -120,14 +123,15 @@ class DBN(object):
                             n_visible=input_size,
                             n_hidden=hidden_layers_sizes[i],
                             W=sigmoid_layer.W,
-                            hbias=sigmoid_layer.b)
+                            hbias=sigmoid_layer.b,
+                            y_type=y_type)
             self.rbm_layers.append(rbm_layer)
 
         # We now need to add a logistic layer on top of the MLP
         self.logLayer = LogisticRegression(
             input=self.sigmoid_layers[-1].output,
             n_in=hidden_layers_sizes[-1],
-            n_out=n_outs)
+            n_out=n_outs, y_type=y_type)
         
         self.get_prediction = theano.function(
 	    inputs = [self.x],
@@ -143,7 +147,10 @@ class DBN(object):
         # compute the cost for second phase of training, defined as the
         # negative log likelihood of the logistic regression (output) layer
         #self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
-        self.finetune_cost = self.logLayer.negative_log_likelihood(self.y) 
+        if y_type == 0:
+            self.finetune_cost = self.logLayer.squared_error(self.y)
+        else:
+            self.finetune_cost = self.logLayer.negative_log_likelihood(self.y) 
 
         # compute the gradients with respect to the model parameters
         # symbolic variable that points to the number of errors made on the
@@ -198,7 +205,7 @@ class DBN(object):
 
         return pretrain_fns
 
-    def build_finetune_functions(self, dataset, batch_size, learning_rate):
+    def build_finetune_functions(self, dataset, batch_size, learning_rate, y_type):
         '''Generates a function `train` that implements one step of
         finetuning, a function `validate` that computes the error on a
         batch from the validation set, and a function `test` that
@@ -220,9 +227,10 @@ class DBN(object):
         train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
         valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
         test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
-        train_set_y = T.cast(train_set_y,'int32') 
-        valid_set_y = T.cast(valid_set_y,'int32')
-        test_set_y = T.cast(test_set_y,'int32')
+        if not y_type==0:
+            train_set_y = T.cast(train_set_y,'int32') 
+            valid_set_y = T.cast(valid_set_y,'int32')
+            test_set_y = T.cast(test_set_y,'int32')
 
         # compute number of minibatches for training, validation and testing
         n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
@@ -274,39 +282,29 @@ class DBN(object):
         return train_fn, valid_score, test_score
 
 
-def train_DBN(dataset=None, hidden_layers_sizes=[1000,1000,1000], k=1,
-	     pretrain_lr=0.01, pretrain_batch_size=20, pretrain_epochs=20,
-             finetune_lr=0.1, finetune_batch_size=10, finetune_epochs=100):
-    """
-    Demonstrates how to train and test a Deep Belief Network.
+def pretrain(pretrain_params, y_type):
 
-    This is demonstrated on MNIST.
+    ############################
+    ###  Setting parameters  ###
+    ############################
 
-    :type learning_rate: float
-    :param learning_rate: learning rate used in the finetune stage
-    :type pretraining_epochs: int
-    :param pretraining_epochs: number of epoch to do pretraining
-    :type pretrain_lr: float
-    :param pretrain_lr: learning rate to be used during pre-training
-    :type k: int
-    :param k: number of Gibbs steps in CD/PCD
-    :type training_epochs: int
-    :param training_epochs: maximal number of iterations ot run the optimizer
-    :type dataset: string
-    :param dataset: path the the pickled dataset
-    :type batch_size: int
-    :param batch_size: the size of a minibatch
-    """
-
-
+    dataset = pretrain_params['dataset']
+    hidden_layers_sizes = pretrain_params['hidden_layers_sizes']
+    pretrain_lr = pretrain_params['pretrain_lr']
+    pretrain_batch_size = pretrain_params['pretrain_batch_size']
+    pretrain_epochs = pretrain_params['pretrain_epochs']
+    k = pretrain_params['k']
+    n_outs = pretrain_params['n_outs']
+    ############################
+    
     train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
     valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
     test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
     
-   
-    train_set_y = T.cast(train_set_y,'int32') 
-    valid_set_y = T.cast(valid_set_y,'int32')
-    test_set_y = T.cast(test_set_y,'int32')
+    if not y_type == 0:
+        train_set_y = T.cast(train_set_y,'int32') 
+        valid_set_y = T.cast(valid_set_y,'int32')
+        test_set_y = T.cast(test_set_y,'int32')
     
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / pretrain_batch_size
@@ -315,15 +313,15 @@ def train_DBN(dataset=None, hidden_layers_sizes=[1000,1000,1000], k=1,
     numpy_rng = numpy.random.RandomState(123)
     print '... building the model'
     # construct the Deep Belief Network
-    dbn = DBN(numpy_rng=numpy_rng, n_ins=dataset.phase2_input_size,
+    model = DBN(numpy_rng=numpy_rng, n_ins=train_set_x.get_value().shape[1],
               hidden_layers_sizes=hidden_layers_sizes,
-              n_outs=2)
+              n_outs=n_outs, y_type=y_type)
 
     #########################
     # PRETRAINING THE MODEL #
     #########################
     print '... getting the pretraining functions'
-    pretraining_fns = dbn.pretraining_functions(train_set_x=train_set_x,
+    pretraining_fns = model.pretraining_functions(train_set_x=train_set_x,
                                                 batch_size=pretrain_batch_size,
                                                 k=k)
 
@@ -338,14 +336,41 @@ def train_DBN(dataset=None, hidden_layers_sizes=[1000,1000,1000], k=1,
             for batch_index in xrange(n_train_batches):
                 c.append(pretraining_fns[i](index=batch_index,
                                             lr=pretrain_lr))
-            print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-            print numpy.mean(c)
+            msg = 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, numpy.mean(c))
+            sys.stdout.write("\r%s" % msg)
+            sys.stdout.flush()
+        print
 
     end_time = time.clock()
     print >> sys.stderr, ('The pretraining code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
+    train_set_x, train_set_y, valid_set_x, valid_set_y, test_set_x, test_set_y = "", "", "", "", "", ""
+    return model
+
+def finetune(finetune_params, y_type):
+
+    ############################
+    ###  Setting parameters  ###
+    ############################
+
+    dataset = finetune_params['dataset']
+    model = finetune_params['model']
+    finetune_lr = finetune_params['finetune_lr']
+    finetune_batch_size = finetune_params['finetune_batch_size']
+    finetune_epochs = finetune_params['finetune_epochs']
+
+    ############################
+
+    train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
+    valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
+    test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
+
+    if not y_type==0 :
+        train_set_y = T.cast(train_set_y,'int32')
+        valid_set_y = T.cast(valid_set_y,'int32')
+        test_set_y = T.cast(test_set_y,'int32')
     ########################
     # FINETUNING THE MODEL #
     ########################
@@ -353,13 +378,13 @@ def train_DBN(dataset=None, hidden_layers_sizes=[1000,1000,1000], k=1,
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / finetune_batch_size
     # get the training, validation and testing function for the model
     print '... getting the finetuning functions'
-    train_fn, validate_model, test_model = dbn.build_finetune_functions(
+    train_fn, validate_model, test_model = model.build_finetune_functions(
                 dataset=dataset, batch_size=finetune_batch_size,
-                learning_rate=finetune_lr)
+                learning_rate=finetune_lr, y_type=y_type)
 
     print '... finetunning the model'
     # early-stopping parameters
-    patience = 4 * n_train_batches  # look as this many examples regardless
+    patience = 10 * n_train_batches  # look as this many examples regardless
     patience_increase = 2.    # wait this much longer when a new best is
                               # found
     improvement_threshold = 0.995  # a relative improvement of this much is
@@ -372,6 +397,7 @@ def train_DBN(dataset=None, hidden_layers_sizes=[1000,1000,1000], k=1,
 
     best_params = None
     best_validation_loss = numpy.inf
+    best_epoch = 0
     test_score = 0.
     start_time = time.clock()
 
@@ -393,10 +419,11 @@ def train_DBN(dataset=None, hidden_layers_sizes=[1000,1000,1000], k=1,
                 print('epoch %i, minibatch %i/%i, validation error %f %%' % \
                       (epoch, minibatch_index + 1, n_train_batches,
                        this_validation_loss * 100.))
-
+                sys.stdout.write("\r%s" % msg)
+                sys.stdout.flush()
                 # if we got the best validation score until now
                 if this_validation_loss < best_validation_loss:
-
+                    best_epoch = epoch
                     #improve patience if loss improvement is good enough
                     if (this_validation_loss < best_validation_loss *
                         improvement_threshold):
@@ -418,18 +445,10 @@ def train_DBN(dataset=None, hidden_layers_sizes=[1000,1000,1000], k=1,
                 done_looping = True
                 break
 
-    end_time = time.clock()
-    print dbn.get_prediction([test_set_x.eval()[0]])
-   
-    print(('Optimization complete with best validation score of %f %%,'
-           'with test performance %f %%') %
-                 (best_validation_loss * 100., test_score * 100.))
-    pdb.set_trace()
-    print >> sys.stderr, ('The fine tuning code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.2fm' % ((end_time - start_time)
-                                              / 60.))
-
+    print
+    print test_score
+    train_set_x, train_set_y, valid_set_x, valid_set_y, test_set_x, test_set_y = "", "", "", "", "", ""
+    return model, best_validation_loss, test_score, best_epoch
 
 if __name__ == '__main__':
-    train_DBN()
+    pass

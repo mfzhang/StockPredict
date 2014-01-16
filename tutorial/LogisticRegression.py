@@ -4,6 +4,7 @@ import gzip
 import os
 import sys
 import time
+import pdb
 
 import numpy
 
@@ -53,14 +54,14 @@ class LogisticRegression(object):
         if y_type == 0:  ###   regression
             self.p_y_given_x = T.dot(input, self.W) + self.b
             self.y_pred = self.p_y_given_x
-
+            """
         elif y_type == 1:  ###   binary classification
             self.p_y_given_x = T.nnet.sigmoid(T.dot(input, self.W) + self.b)
-            self.y_pred = T.argmax(self.p_y_given_x,axis=1)
-
+            self.y_pred = self.p_y_given_x.flatten()>0.5
+            """
         else:  ###   multi-label classification
             self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
-            elf.y_pred = T.argmax(self.p_y_given_x,axis=1)
+            self.y_pred = T.argmax(self.p_y_given_x,axis=1)
 
         # parameters of the model
         self.params = [self.W, self.b]
@@ -109,12 +110,11 @@ class LogisticRegression(object):
         :param y: corresponds to a vector that gives for each example the
                   correct label
         """
-
         # check if y has same dimension of y_pred
         if y.ndim != self.y_pred.ndim:
             raise TypeError('y should have the same shape as self.y_pred',
                 ('y', target.type, 'y_pred', self.y_pred.type))
-        # check if y is of the correct datatype
+            # check if y is of the correct datatype
         if y.dtype.startswith('int'):
             # the T.neq operator returns a vector of 0s and 1s, where 1
             # represents a mistake in prediction
