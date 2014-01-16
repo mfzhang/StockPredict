@@ -22,7 +22,7 @@ class RBM(object):
     """Restricted Boltzmann Machine (RBM)  """
     def __init__(self, input=None, n_visible=784, n_hidden=500, \
         W=None, hbias=None, vbias=None, numpy_rng=None,
-        theano_rng=None):
+        theano_rng=None, y_type=1):
         """
         RBM constructor. Defines the parameters of the model along with
         basic operations for inferring hidden from visible (and vice-versa),
@@ -49,6 +49,7 @@ class RBM(object):
 
         self.n_visible = n_visible
         self.n_hidden = n_hidden
+        self.y_type = y_type
 
         if numpy_rng is None:
             # create a number generator
@@ -99,7 +100,15 @@ class RBM(object):
     def free_energy(self, v_sample):
         ''' Function to compute the free energy '''
         wx_b = T.dot(v_sample, self.W) + self.hbias
+                
         vbias_term = T.dot(v_sample, self.vbias)
+        """
+        if self.y_type == 1:
+            vbias_term = T.dot(v_sample, self.vbias)
+        else:
+            vbias_term = 0.5*T.dot((v_sample - self.vbias), (v_sample - self.vbias).T)
+        
+        """
         hidden_term = T.sum(T.log(1 + T.exp(wx_b)), axis=1)
         return -hidden_term - vbias_term
 
@@ -153,11 +162,18 @@ class RBM(object):
         # Note that theano_rng.binomial returns a symbolic sample of dtype
         # int64 by default. If we want to keep our computations in floatX
         # for the GPU we need to specify to return the dtype floatX
-
         v1_sample = self.theano_rng.binomial(size=v1_mean.shape,
-                                            n=1, p=v1_mean,
-                                             dtype=theano.config.floatX)
-
+                                                n=1, p=v1_mean,
+                                                dtype=theano.config.floatX)
+        """
+        if self.y_type == 1:
+            v1_sample = self.theano_rng.binomial(size=v1_mean.shape,
+                                                n=1, p=v1_mean,
+                                                dtype=theano.config.floatX)
+        else:
+            v1_sample = self.theano_rng.normal(size=v1_mean.shape, avg=v1_mean, std=1.0,
+                                                dtype=theano.config.floatX) + pre_sigmoid_v1
+        """
         return [pre_sigmoid_v1, v1_mean, v1_sample]
 
     def gibbs_hvh(self, h0_sample):
@@ -304,11 +320,19 @@ class RBM(object):
         that Theano can catch and optimize the expression.
 
         """
-
         cross_entropy = T.mean(
                         T.sum(self.input * T.log(T.nnet.sigmoid(pre_sigmoid_nv)) +
                         (1 - self.input) * T.log(1 - T.nnet.sigmoid(pre_sigmoid_nv)),
                         axis=1))
-	
         return cross_entropy
-
+        """
+        if self.y_type == 1:
+            cross_entropy = T.mean(
+                        T.sum(self.input * T.log(T.nnet.sigmoid(pre_sigmoid_nv)) +
+                        (1 - self.input) * T.log(1 - T.nnet.sigmoid(pre_sigmoid_nv)),
+                        axis=1))
+            return cross_entropy
+        else:
+            L2_error = T.mean(T.sum((self.input - pre_sigmoid_nv)**2))
+            return L2_error
+        """

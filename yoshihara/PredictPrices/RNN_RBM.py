@@ -28,7 +28,8 @@ def shared_random(n_visible,n_hidden,name):
 
 class RnnRbm(object):
 #class RnnRbm(RBM):
-    def __init__(self, input=None, n_visible=2, n_hidden=4, n_hidden_recurrent=3, lr=1.0):
+    def __init__(self, input=None, n_visible=2, n_hidden=4, n_hidden_recurrent=3, lr=1.0, y_type=1):
+    
         
         self.n_visible = n_visible
         self.n_hidden = n_hidden
@@ -94,17 +95,7 @@ class RnnRbm(object):
                                                bh_t, k=25)
             u_t = T.tanh(self.bu + T.dot(v_t, self.Wvu) + T.dot(u_tm1, self.Wuu))
             return ([v_t, u_t], updates) if generate else [u_t, bv_t, bh_t]
-        """
-        def recurrence(v_t, u_tm1):
-            bv_t = self.bv + T.dot(u_tm1, self.Wuv)
-            bh_t = self.bh + T.dot(u_tm1, self.Wuh)
-            generate = v_t is None
-            if generate:
-                v_t, _, _, updates = self.build_rbm(T.zeros((n_visible,)), self.W, bv_t,
-                                               bh_t, k=25)
-            u_t = T.tanh(self.bu + T.dot(v_t, self.Wvu) + T.dot(u_tm1, self.Wuu))
-            return ([v_t, u_t], updates) if generate else [u_t, bv_t, bh_t]
-	"""
+        
         (u_t, bv_t, bh_t), updates_train = theano.scan(
             lambda v_t, u_tm1, *_: recurrence(v_t, u_tm1),
             sequences=self.v, outputs_info=[u0, None, None], non_sequences=self.params)
@@ -114,10 +105,6 @@ class RnnRbm(object):
         updates_bh_t = updates_train.copy()
 
         updates_train.update(updates_rbm)
-        
-        #(u_t, bv_t, bh_t), updates_bh_t = theano.scan(
-        #    lambda v_t, u_tm1, *_: recurrence(v_t, u_tm1),
-        #    sequences=self.v, outputs_info=[u0, None, None], non_sequences=self.params)
         
         # symbolic loop for sequence generation
         (v_t, u_t), updates_generate = theano.scan(
@@ -175,28 +162,7 @@ class RnnRbm(object):
             print param.get_value()
     
     def generate(self, show=True):
-        '''Generate a sample sequence, plot the resulting piano-roll and save
-it as a MIDI file.
-
-filename : string
-  A MIDI file will be created at this location.
-show : boolean
-  If True, a piano-roll of the generated sequence will be shown.'''
         print self.generate_function()
-
-        """
-        piano_roll = self.generate_function()
-        midiwrite(filename, piano_roll, self.r, self.dt)
-        if show:
-            extent = (0, self.dt * len(piano_roll)) + self.r
-            pylab.figure()
-            pylab.imshow(piano_roll.T, origin='lower', aspect='auto',
-                         interpolation='nearest', cmap=pylab.cm.gray_r,
-                         extent=extent)
-            pylab.xlabel('time (s)')
-            pylab.ylabel('MIDI note number')
-            pylab.title('generated piano-roll')
-        """
 
 def test_rnnrbm(dataset, batch_size=2, num_epochs=10):
     model = RnnRbm()

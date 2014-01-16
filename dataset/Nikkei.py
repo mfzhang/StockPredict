@@ -145,7 +145,12 @@ class Nikkei():
                                         label = int((self.pricelist[brandcode][year][date]['macd_tomorrow'] - self.pricelist[brandcode][year][date]['macd']) > 0)
                                     if brandcode not in self.phase2[datatype]:
                                         self.phase2[datatype][brandcode] = []
-                                    self.phase2[datatype][brandcode].append([label])
+                                    
+                                    if label_type < 3:
+                                        self.phase2[datatype][brandcode].append([label])
+                                    else:
+                                        self.phase2[datatype][brandcode].append(label)
+
             # pdb.set_trace()
 
             if dataset_type == 'chi2_selected':

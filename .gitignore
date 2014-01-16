@@ -1,4 +1,5 @@
 experiment/Model/*
+yoshihara/Model/*
 dataset/dataset/*
 .DS_Store
 *.pkl
