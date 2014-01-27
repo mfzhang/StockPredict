@@ -54,11 +54,11 @@ class LogisticRegression(object):
         if y_type == 0:  ###   regression
             self.p_y_given_x = T.dot(input, self.W) + self.b
             self.y_pred = self.p_y_given_x
-            """
-        elif y_type == 1:  ###   binary classification
-            self.p_y_given_x = T.nnet.sigmoid(T.dot(input, self.W) + self.b)
-            self.y_pred = self.p_y_given_x.flatten()>0.5
-            """
+
+        # elif y_type == 1:  ###   binary classification
+        #     self.p_y_given_x = T.nnet.sigmoid(T.dot(input, self.W) + self.b)
+        #     self.y_pred = T.round(self.p_y_given_x) 
+
         else:  ###   multi-label classification
             self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
             self.y_pred = T.argmax(self.p_y_given_x,axis=1)
@@ -95,6 +95,7 @@ class LogisticRegression(object):
         # i.e., the mean log-likelihood across the minibatch.
         return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
 
+
     def squared_error(self, y):
         return T.mean((y - self.p_y_given_x) ** 2)
 
@@ -112,8 +113,9 @@ class LogisticRegression(object):
         """
         # check if y has same dimension of y_pred
         if y.ndim != self.y_pred.ndim:
+            pdb.set_trace()
             raise TypeError('y should have the same shape as self.y_pred',
-                ('y', target.type, 'y_pred', self.y_pred.type))
+                ('y', y.type, 'y_pred', self.y_pred.type))
             # check if y is of the correct datatype
         if y.dtype.startswith('int'):
             # the T.neq operator returns a vector of 0s and 1s, where 1

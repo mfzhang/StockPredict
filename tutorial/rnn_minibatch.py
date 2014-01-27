@@ -9,7 +9,7 @@ import theano.tensor as T
 from sklearn.base import BaseEstimator
 import logging
 import time
-import os
+import os, sys
 import datetime
 import pdb
 import cPickle as pickle
@@ -593,13 +593,29 @@ class MetaRNN(BaseEstimator):
                                          this_train_loss, this_train_zero_one,
                                          this_test_loss, this_test_zero_one,
                                          self.learning_rate))
+                                msg = ('epoch %i, mb %i/%i, tr loss %f, '
+                                            'tr zo %f, te loss %f '
+                                            'te zo %f lr: %f' % \
+                                        (epoch, minibatch_idx + 1,
+                                         n_train_batches,
+                                         this_train_loss, this_train_zero_one,
+                                         this_test_loss, this_test_zero_one,
+                                         self.learning_rate))
+                                sys.stdout.write("\r%s" % msg)
+                                sys.stdout.flush()
                             else:
                                 logger.info('epoch %i, mb %i/%i, tr loss %f '
                                             'te loss %f lr: %f' % \
                                 (epoch, minibatch_idx + 1, n_train_batches,
                                  this_train_loss, this_test_loss,
                                  self.learning_rate))
-
+                                msg = ('epoch %i, mb %i/%i, tr loss %f '
+                                            'te loss %f lr: %f' % \
+                                (epoch, minibatch_idx + 1, n_train_batches,
+                                 this_train_loss, this_test_loss,
+                                 self.learning_rate))
+                                sys.stdout.write("\r%s" % msg)
+                                sys.stdout.flush()
                         else:
                             if compute_zero_one:
                                 logger.info('epoch %i, mb %i/%i, train loss %f'
@@ -610,6 +626,17 @@ class MetaRNN(BaseEstimator):
                                                         this_train_loss,
                                                         this_train_zero_one,
                                                         self.learning_rate))
+
+                                msg = ('epoch %i, mb %i/%i, train loss %f'
+                                            ' train zo %f '
+                                            'lr: %f' % (epoch,
+                                                        minibatch_idx + 1,
+                                                        n_train_batches,
+                                                        this_train_loss,
+                                                        this_train_zero_one,
+                                                        self.learning_rate))
+                                sys.stdout.write("\r%s" % msg)
+                                sys.stdout.flush()
                             else:
                                 logger.info('epoch %i, mb %i/%i, train loss %f'
                                             ' lr: %f' % (epoch,
@@ -617,6 +644,15 @@ class MetaRNN(BaseEstimator):
                                                          n_train_batches,
                                                          this_train_loss,
                                                          self.learning_rate))
+
+                                msg = ('epoch %i, mb %i/%i, train loss %f'
+                                            ' lr: %f' % (epoch,
+                                                         minibatch_idx + 1,
+                                                         n_train_batches,
+                                                         this_train_loss,
+                                                         self.learning_rate))
+                                sys.stdout.write("\r%s" % msg)
+                                sys.stdout.flush()
 
                         self.optional_output(train_set_x, show_norms,
                                              show_output)
@@ -805,7 +841,7 @@ def test_real(n_epochs=1000):
     targets[2:, :, 2] = seq[:-2, :, 0]  # delayed 2
 
     targets += 0.01 * np.random.standard_normal(targets.shape)
-
+    pdb.set_trace()
     model = MetaRNN(n_in=n_in, n_hidden=n_hidden, n_out=n_out,
                     learning_rate=0.01, learning_rate_decay=0.999,
                     n_epochs=n_epochs, batch_size=n_seq, activation='tanh',
@@ -854,7 +890,7 @@ def test_binary(multiple_out=False, n_epochs=1000, optimizer='cg'):
         # is less than lag 2 (dim 0)
         targets[2:, :, 1] = np.cast[np.int](
             (seq[1:-1, :, 4] * seq[1:-1, :, 2]) > seq[:-2, :, 0])
-
+    pdb.set_trace()
     model = MetaRNN(n_in=n_in, n_hidden=n_hidden, n_out=n_out,
                     learning_rate=0.005, learning_rate_decay=0.999,
                     n_epochs=n_epochs, batch_size=n_seq, activation='tanh',
@@ -942,7 +978,7 @@ def test_softmax(n_epochs=250, optimizer='cg'):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     t0 = time.time()
-    test_real(n_epochs=1000)
+    test_binary(n_epochs=1000)
     #test_binary(optimizer='sgd', n_epochs=1000)
     #test_softmax(n_epochs=250, optimizer='sgd')
     print "Elapsed time: %f" % (time.time() - t0)

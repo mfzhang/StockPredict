@@ -12,7 +12,8 @@ from theano.tensor.shared_randomstreams import RandomStreams
 sys.path.extend(['/home/fujikawa/lib/python/other/pylearn2/pylearn2', '/home/fujikawa/StockPredict/src/deeplearning/dataset'])
 
 # import my library
-from dataset.Nikkei import Nikkei
+from XOR import XOR
+from Nikkei import Nikkei
 
 # activate_function = T.nnet.sigmoid
 
@@ -35,9 +36,6 @@ class RBM(object):
         if params != None:
             if 'beta' in params:
                 self.reg_weight = params['beta']
-            if 'activate_function' in params:
-                print 'load activate_function'
-                self.activate_function = params['activate_function']
             if 'corruption_level' in params:
                 print 'load corruption_level'
                 self.corruption_level = params['corruption_level']
@@ -355,7 +353,7 @@ class RBM(object):
                                          dtype=theano.config.floatX) * input
 
 
-def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=200,
+def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=50,
              n_chains=1, n_samples=10, outdir='', k=1):
     """
     Demonstrate how to train and afterwards sample from it using Theano.

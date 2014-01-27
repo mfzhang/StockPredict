@@ -68,7 +68,8 @@ class Nikkei():
         ################################################
         self.trainset, self.validset, self.testset = [], [], []
         self.phase1 = {}
-        self.unified = {}
+        self.unified_max = {}
+        self.unified_mean = {}
         self.baseline = {}
         self.baseline_original = {}
         if dataset_type != 'chi2_selected':
@@ -97,7 +98,7 @@ class Nikkei():
         self.phase1['valid'] = self.get_data(self.validset, type=self.type)
         self.phase1['test'] = self.get_data(self.testset, type=self.type)
 
-    def unify_stockprices(self, dataset=None, brandcodes=['0101'], dataset_type='chi2_selected', label_type=1):
+    def unify_stockprices(self, dataset=None, brandcodes=['0101'], dataset_type='chi2_selected', label_type=1, y_type=0, y_force_list=False):
         """
         ########                      STEP 3                           #########
         指定された銘柄の、記事に関する素性と株価を日付で結びつけ、self.phase2へ保存する
@@ -143,14 +144,16 @@ class Nikkei():
                                     ## 二値分類 : 翌日MACD - 当日MACD <> 0
                                     elif label_type == 4:
                                         label = int((self.pricelist[brandcode][year][date]['macd_tomorrow'] - self.pricelist[brandcode][year][date]['macd']) > 0)
+
+                                    ## y のデータを格納する配列の準備
                                     if brandcode not in self.phase2[datatype]:
                                         self.phase2[datatype][brandcode] = []
-                                    
-                                    if label_type < 3:
+
+                                    # self.phase2[datatype][brandcode].append([label])
+                                    if y_type == 0 or y_force_list == True:
                                         self.phase2[datatype][brandcode].append([label])
                                     else:
                                         self.phase2[datatype][brandcode].append(label)
-
             # pdb.set_trace()
 
             if dataset_type == 'chi2_selected':
@@ -226,31 +229,28 @@ class Nikkei():
         self.phase2_input_size = model.n_hidden
         for year in self.raw_data.keys():
             print year
-            if year not in self.unified:
-                self.unified[year] = {}
+            if year not in self.unified_max:
+                self.unified_max[year] = {}
+                self.unified_mean[year] = {}
                 self.baseline[year] = {}
-                self.baseline_original[year] = {}
+                # self.baseline_original[year] = {}
             bar = ProgressBar(maxval=len(self.raw_data[year].keys())).start()
             for i, date in enumerate(self.raw_data[year].keys()):
                 bar.update(i)
                 vectors = self.get_numpy_dense_design(self.raw_data[year][date])
-
                 vectors_baseline = np.max(vectors, axis=0)
-
-                    # pdb.set_trace()
-                daily_vector = model.get_maxpool(vectors)
-                # self.unified[year][date] = model.propup(vectors)[1]
-                # daily_vector = np.array(np.max(model.propup(vectors)[1].eval(), axis=0))
-                # daily_vector_baseline = model.get_propup_vector(vectors_baseline)
-                # pdb.set_trace()
+                daily_vector_maxpool = model.get_maxpool(vectors)
+                daily_vector_meanpool = model.get_meanpool(vectors)
                 self.baseline[year][date] = vectors_baseline
-                self.unified[year][date] = daily_vector
-            pdb.set_trace()
+                self.unified_max[year][date] = daily_vector_maxpool
+                self.unified_mean[year][date] = daily_vector_meanpool
+
+
         #if experiment_type == 'baseline':
             #self.raw_data = None
             #self.trainset, self.validset, self.testset = [], [], []
             #self.phase1 = {}
-        pdb.set_trace()
+
     def get_theano_design(self, array):
         return theano.shared(array)
 

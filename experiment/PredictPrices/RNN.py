@@ -9,22 +9,24 @@ from tutorial.rnn_minibatch import MetaRNN as MetaRNN_minibatch
 from tutorial.hf import SequenceDataset, hf_optimizer
 import numpy as np
 
-def train_RNN_minibatch(dataset=None, n_hidden=5000, steps=30, batch_size=5, n_epochs=100, optimizer='bfgs'):
-    
-    train_set_x, train_set_y = dataset.get_batch_design(0, steps, dataset.phase2['train'], type='numpy_dense', isInt=True)
-    valid_set_x, valid_set_y = dataset.get_batch_design(0, steps, dataset.phase2['valid'], type='numpy_dense', isInt=True)
+def train_RNN_minibatch(dataset=None, n_hidden=1500, steps=30, batch_size=30, n_epochs=100, optimizer='sgd'):
+
+    # train_set_x, train_set_y = dataset.get_batch_design(0, steps, dataset.phase2['train'], type='numpy_dense', isInt=True)
+    # valid_set_x, valid_set_y = dataset.get_batch_design(0, steps, dataset.phase2['valid'], type='numpy_dense', isInt=True)
+    train_set_x, train_set_y = dataset.phase2['train']['x'], dataset.phase2['train']['y']
+    valid_set_x, valid_set_y = dataset.phase2['valid']['x'], dataset.phase2['valid']['y']
     test_set_x, test_set_y = dataset.phase2['test']['x'], dataset.phase2['test']['y']
     # train_set_y = np.asarray(valid_set_x, dtype=np.int32)
     # valid_set_x, valid_set_y = dataset.phase2['valid']['x'], dataset.phase2['valid']['y']
     # test_set_x, test_set_y = dataset.get_batch_design(0, batch_size, dataset.phase2['test'], type='numpy_dense')
-    pdb.set_trace()
-    print dataset.phase2_input_size
-    model = MetaRNN_minibatch(n_in=dataset.phase2_input_size, n_hidden=n_hidden, n_out=1,
-                    learning_rate=0.0001, learning_rate_decay=0.99,
-                    n_epochs=n_epochs, activation='tanh',
+
+    print train_set_x.shape[1]
+    model = MetaRNN_minibatch(n_in=train_set_x.shape[1], n_hidden=n_hidden, n_out=1,
+                    learning_rate=0.01, learning_rate_decay=0.99,
+                    n_epochs=n_epochs, activation='tanh', L2_reg=0.01,
                     batch_size=batch_size, output_type='binary'
                     )
-    model.fit(train_set_x, train_set_y, validate_every=100, compute_zero_one=True, optimizer=optimizer)
+    model.fit([train_set_x], [train_set_y], X_test=[valid_set_x], Y_test=[valid_set_y], validate_every=1, compute_zero_one=True, optimizer=optimizer)
     pdb.set_trace()
     return model
 
@@ -67,7 +69,7 @@ def test_binary(multiple_out=False, n_epochs=1000, optimizer='bfgs'):
     
 
 
-def train_RNN(dataset=None, n_hidden=5000, batch_size=100):
+def train_RNN(dataset=None, n_hidden=1000, batch_size=100):
     
     train_set_x, train_set_y = dataset.get_batch_design(0, batch_size, dataset.phase2['train'], type='numpy_dense')
     valid_set_x, valid_set_y = dataset.get_batch_design(0, batch_size, dataset.phase2['valid'], type='numpy_dense')
@@ -76,10 +78,10 @@ def train_RNN(dataset=None, n_hidden=5000, batch_size=100):
     # valid_set_x, valid_set_y = dataset.phase2['valid']['x'], dataset.phase2['valid']['y']
     # test_set_x, test_set_y = dataset.get_batch_design(0, batch_size, dataset.phase2['test'], type='numpy_dense')
 
-    print dataset.phase2_input_size
-    model = MetaRNN(n_in=dataset.phase2_input_size, n_hidden=n_hidden, n_out=1,
+    print len(train_set_x[0][0])
+    model = MetaRNN(n_in=len(train_set_x[0][0]), n_hidden=n_hidden, n_out=1,
                     learning_rate=0.00005, learning_rate_decay=0.999,
-                    n_epochs=400, activation='tanh')
+                    n_epochs=10, activation='tanh', output_type='real')
     model.fit(train_set_x, train_set_y, X_test=valid_set_x, Y_test=valid_set_y, validation_frequency=1)
     pdb.set_trace()
     return model
@@ -97,7 +99,7 @@ def train_RNN_hf(dataset=None, n_hidden=5000, batch_size=30, n_updates=100):
     cg_dataset = SequenceDataset([train_set_x, train_set_y], batch_size=None,
                                  number_batches=20)
 
-    model = MetaRNN(n_in=dataset.phase2_input_size, n_hidden=n_hidden, n_out=1,
+    model = MetaRNN(n_in=len(train_set_x[0][0]), n_hidden=n_hidden, n_out=1,
                     activation='tanh')
 
     opt = hf_optimizer(p=model.rnn.params, inputs=[model.x, model.y],
