@@ -9,7 +9,7 @@ import json, codecs, cPickle, gzip, datetime, pdb, sys
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
 
 # wordidset_all = "dataset/dataset/chi2-unified.wordidset"
-wordidset_all = "dataset/dataset/chi2-unified-sentence.wordidset"
+wordidset_all = "dataset/dataset/chi2-unified-sentence-10000.wordidset"
 
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
@@ -18,7 +18,7 @@ wordidset_chi2_selected = "dataset/dataset/chi2.wordidset"
 ##  株価 / 辞書データに関するディレクトリ  
 
 pricelistdir = 'dataset/dataset/pricelist.pkl'
-dicdir = 'dataset/dataset/chi2-result-unified.dic'
+dicdir = 'dataset/dataset/chi2-result-unified_10000.dic'
 
 # pricelistdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/StockPrice/pricelist.pkl'
 # dicdir = '/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/BOW/dat/bow-dic/chi2-result-unified.dic'
@@ -225,7 +225,6 @@ class Nikkei():
 
         """
         
-        
         self.phase2_input_size = model.n_hidden
         for year in self.raw_data.keys():
             print year
@@ -238,18 +237,21 @@ class Nikkei():
             for i, date in enumerate(self.raw_data[year].keys()):
                 bar.update(i)
                 vectors = self.get_numpy_dense_design(self.raw_data[year][date])
+                
                 vectors_baseline = np.max(vectors, axis=0)
-                daily_vector_maxpool = model.get_maxpool(vectors)
-                daily_vector_meanpool = model.get_meanpool(vectors)
                 self.baseline[year][date] = vectors_baseline
-                self.unified_max[year][date] = daily_vector_maxpool
-                self.unified_mean[year][date] = daily_vector_meanpool
 
+                if experiment_type != 'baseline':
+                    pdb.set_trace()
+                    daily_vector_maxpool = model.get_maxpool(vectors)
+                    daily_vector_meanpool = model.get_meanpool(vectors)  
+                    self.unified_max[year][date] = daily_vector_maxpool
+                    self.unified_mean[year][date] = daily_vector_meanpool
 
-        #if experiment_type == 'baseline':
-            #self.raw_data = None
-            #self.trainset, self.validset, self.testset = [], [], []
-            #self.phase1 = {}
+        if experiment_type == 'baseline':
+            self.raw_data = None
+            self.trainset, self.validset, self.testset = [], [], []
+            self.phase1 = {}
 
     def get_theano_design(self, array):
         return theano.shared(array)

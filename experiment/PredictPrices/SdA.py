@@ -16,12 +16,14 @@ from theano.tensor.shared_randomstreams import RandomStreams
 
 
 sys.path.append('/home/fujikawa/StockPredict/src/deeplearning/tutorial')
+sys.path.append('/home/fujikawa/lib/python/other/theano-rnn')
+
 
 from tutorial.LogisticRegression import LogisticRegression
 from tutorial.HiddenLayer import HiddenLayer, DropoutHiddenLayer
 from tutorial.dA import dA
 from tutorial.SAE import SparseAutoencoder
-
+from tutorial.rnn import MetaRNN, RNN
 
 class SdA(object):
     """Stacked denoising auto-encoder class (SdA)
@@ -36,7 +38,8 @@ class SdA(object):
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
                  hidden_layers_sizes=[500, 500], n_outs=1,
-                 corruption_levels=[0.1, 0.1], y_type=1, sparse_weight=0):
+                 corruption_levels=[0.1, 0.1], y_type=1, sparse_weight=0
+                 recurrent=False, dropout=False):
         """ This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -108,12 +111,18 @@ class SdA(object):
                 layer_input = self.x
             else:
                 layer_input = self.sigmoid_layers[-1].output
-
-            sigmoid_layer = HiddenLayer(rng=numpy_rng,
-                                        input=layer_input,
-                                        n_in=input_size,
-                                        n_out=hidden_layers_sizes[i],
-                                        activation=T.nnet.sigmoid)
+            if dropout == True:
+                sigmoid_layer = DropoutHiddenLayer(rng=numpy_rng,
+                                                    input=layer_input,
+                                                    n_in=input_size,
+                                                    n_out=hidden_layers_sizes[i],
+                                                    activation=T.nnet.sigmoid)
+            else:
+                sigmoid_layer = HiddenLayer(rng=numpy_rng,
+                                            input=layer_input,
+                                            n_in=input_size,
+                                            n_out=hidden_layers_sizes[i],
+                                            activation=T.nnet.sigmoid)
             # add the layer to our list of layers
             self.sigmoid_layers.append(sigmoid_layer)
             # its arguably a philosophical question...
@@ -148,22 +157,40 @@ class SdA(object):
 
         # We now need to add a logistic layer on top of the MLP
         if len(self.sigmoid_layers) > 0:
-            self.logLayer = LogisticRegression(
-                             input=self.sigmoid_layers[-1].output,
-                             n_in=hidden_layers_sizes[-1], n_out=n_outs,
-                             y_type=y_type
-                             )
-        else:
-            self.logLayer = LogisticRegression(
-                             input=self.x,
-                             n_in=n_ins, n_out=n_outs,
-                             y_type=y_type
-                             )
+            if recurrent == True:
+                self.logLayer = RNN(input=self.sigmoid_layers[-1].output, n_in=hidden_layers_sizes[-1],
+                                   n_hidden=500, n_out=n_outs,
+                                   activation=T.tanh, output_type='real',
+                                   use_symbolic_softmax=False)
 
-        self.get_prediction = theano.function(
-            inputs=[self.x],
-            outputs=[self.logLayer.y_pred]
-            )
+            else:
+                self.logLayer = LogisticRegression(
+                                 input=self.sigmoid_layers[-1].output,
+                                 n_in=hidden_layers_sizes[-1], n_out=n_outs,
+                                 y_type=y_type
+                                 )
+        else:
+            if recurrent == True:
+                self.logLayer = RNN(input=self.sigmoid_layers[-1].output, n_in=hidden_layers_sizes[-1],
+                                   n_hidden=500, n_out=n_outs,
+                                   activation=T.tanh, output_type='real',
+                                   use_symbolic_softmax=False)
+            else:
+                self.logLayer = LogisticRegression(
+                                 input=self.x,
+                                 n_in=n_ins, n_out=n_outs,
+                                 y_type=y_type
+                                 )
+        if recurrent == True:
+            self.get_prediction = theano.function(
+                inputs=[self.x],
+                outputs=T.round(self.logLayer.y_pred)
+                )
+        else:
+            self.get_prediction = theano.function(
+                inputs=[self.x],
+                outputs=[self.logLayer.y_pred]
+                )
         self.get_lastlayer_output = theano.function(
             inputs=[self.x],
             outputs=[self.sigmoid_layers[-1].output]
@@ -175,7 +202,10 @@ class SdA(object):
         # defined as the negative log likelihood
         # self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
         if y_type == 0:
-            self.finetune_cost = self.logLayer.squared_error(self.y)
+            if recurrent == True:
+                self.finetune_cost = self.logLayer.mse(self.y)
+            else:
+                self.finetune_cost = self.logLayer.squared_error(self.y)
         else:
             self.finetune_cost = self.logLayer.negative_log_likelihood(self.y) 
         # compute the gradients with respect to the model parameters

@@ -23,9 +23,10 @@ from run import *
 
 def test_phase1(params, model_dirs):
     model = load_model(input=x, params_dir=model_dirs['STEP1'], model_type=params['model'])
-    dic = json.load(codecs.open('dataset/dataset/chi2-result-unified.rdic', 'r', 'utf-8'))
+    dic = json.load(codecs.open('dataset/dataset/chi2-result-unified_10000.rdic', 'r', 'utf-8'))
     threshold = 0.2
     max_len = 10
+
     out = codecs.open(model_dirs['STEP1_analysis'], 'w', 'shift-jis')
     bar = ProgressBar(maxval=model.W.get_value().T.shape[0]).start()
     args = model.W.get_value().T.argsort()
@@ -35,9 +36,9 @@ def test_phase1(params, model_dirs):
     for i in range(model.W.get_value().T.shape[0]):
         bar.update(i)
         W_values = []
-        for n in range(-1, -11, -1):
-            # W_values.append('%s - %.2f' % (dic[str(args[i][n])], w_t[i][args[i][n]]))
-            W_values.append('%s' % (dic[str(args[i][n])]))
+        for n in range(-1, -16, -1):
+            W_values.append('%s - %.2f' % (dic[str(args[i][n])], w_t[i][args[i][n]]))
+            # W_values.append('%s' % (dic[str(args[i][n])]))
         out.write(','.join(W_values) + '\n')
     out.close()
 
@@ -103,16 +104,15 @@ if __name__ == '__main__':
 
     if len(sys.argv) <= 1:
         params = {}
-        n_hiddens = [50, 100, 500, 2500]
+        n_hiddens = [100, 1000, 2000]
         learning_rates = [0.05]
-        reg_weights = [0.1, 0.01, 0.02, 0, 0.2, 0.05]
-        corruption_levels = [0.5, 0.2, 0]
-        batch_size = [20, 50, 100]
+        reg_weights = [0., 0.1, 0.01, 0.02, 0.05, 0.001, 0.0001]
+        batch_sizes = [10, 20, 50, 100]
         models = ['sae', 'rbm']
         for n_hidden in n_hiddens:
             for learning_rate in learning_rates:
                 for reg_weight in reg_weights:
-                    for corruption_level in corruption_levels:
+                    for batch_size in batch_sizes:
                         for model in models:
                             params['n_hidden'] = n_hidden
                             params['learning_rate'] = learning_rate
@@ -122,7 +122,7 @@ if __name__ == '__main__':
                             params['model'] = model
                             try:
                                 main(params)
-                            except:
+                            except IOError:
                                 pass
     else:
         params = {

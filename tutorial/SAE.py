@@ -198,8 +198,8 @@ class SparseAutoencoder(object):
 
         l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
         
-        cost += 1e-2 * l2_w
-        cost += l2_h
+        cost += l2_w
+        # cost += l2_h
 
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters

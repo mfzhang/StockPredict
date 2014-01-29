@@ -3,6 +3,7 @@
 import cPickle, json, pdb, pickle, theano, sys, numpy, time, os,datetime
 import sklearn.decomposition
 import os.path
+import gc
 import copy
 import theano.tensor as T
 from dataset.Nikkei import Nikkei
@@ -16,6 +17,7 @@ from experiment.PredictPrices import DBN_regression
 from yoshihara.PredictPrices import RNNRBM_MLP
 from yoshihara.PredictPrices import RNNRBM_DBN 
 from yoshihara.PredictPrices import DBN
+from yoshihara.PredictPrices import stacked_RNNRBM 
 
 from experiment.PredictPrices.RNN import train_RNN, train_RNN_hf, train_RNN_minibatch
 import curses
@@ -37,7 +39,7 @@ params = {
     'STEP1' : {
         'beta' : 1.,
         'model' : 'sae',
-        'n_hidden' : 10,
+        'n_hidden' : 5000,
         'learning_rate' : 0.05
     },
     'STEP3' : {
@@ -68,20 +70,19 @@ params = {
 #######################################
 params['STEP3']['brandcode'] = ['0101']
 params['STEP4']['hidden_layers_sizes'] = [
-    # [params['STEP1']['n_hidden'] / 2],
-    [params['STEP1']['n_hidden']*1.5, params['STEP1']['n_hidden']]
-    # [params['STEP1']['n_hidden'] , params['STEP1']['n_hidden'], params['STEP1']['n_hidden'] / 2]
+[5000]
 ]
-params['STEP4']['hidden_recurrent'] = [10,100,1000]
+params['STEP4']['hidden_recurrent'] = [100,200,500]
+
 params['STEP4']['pretrain'] = {
-    'batch_size' : [30],
-    'learning_rate' : [0.0001,0.001,0.01],
-    'epochs' : [1]
+    'batch_size' : [100],
+    'learning_rate' : [0.001],
+    'epochs' : [200]
 }
 params['STEP4']['finetune'] = {
-    'batch_size' : [30],
-    'learning_rate' : [0.0001,0.001,0.01,0.1],
-    'epochs' : [1]
+    'batch_size' : [10,30,50,100],
+    'learning_rate' : [0.0001,0.0005,0.001,0.01,0.1],
+    'epochs' : [100]
 }
 
 
@@ -175,12 +176,12 @@ def msg_loop(stdscr):
             msg = '**  ' + initial_msg[x] + '\n'
             msg += '**  ' + labeltype_msg[l] + '\n\n'
             msg += '以下から予測モデルに利用するモデルを選択して下さい．\n'
-            msg += '1: SdA_regression, 2: DBN_regression, 3: SdA_RNN, 4:RNNRBM_MLP, 5:RNNRBM_DBN\n'
+            msg += '1: SdA_regression, 2: DBN, 3: SdA_RNN, 4:RNNRBM_MLP, 5:RNNRBM_DBN, 6:stacked_RNNRBM\n'
             stdscr.addstr(msg)
             m = int(stdscr.getstr())
             curses.flushinp()
             stdscr.clear()
-            if l <= 4 and m <= 5:
+            if l <= 4 and m <= 6:
                 break 
             else:
                 print '  ** 注 **     適切な値を入力して下さい。\n'
@@ -295,15 +296,18 @@ def predict(dataset, model, brandcodes=['0101'], label_type=1, y_type=1):
     dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes,
                                 dataset_type=params['experiment_type'],label_type=label_type)
     reguralize_data(dataset, brandcodes)
-    change_brand(dataset, '0101')
-    model_dirs['STEP4_logs'] = '%s/%s/%sh%d_%s.log' % (default_model_dir, 'STEP4_logs', '0101', params['STEP1']['n_hidden'], params['STEP1']['model'])
+    change_brand(dataset, brandcodes[0])
+    #change_brand(dataset, '0101')
+    model_dirs['STEP4_logs'] = '%s/%s/%sh%d_%s.log' % (default_model_dir, 'STEP4_logs','top11', params['STEP1']['n_hidden'], 'layer1_rnnrbm_dbn')
     all_size = len(params['STEP4']['hidden_recurrent']) * len(params['STEP4']['hidden_layers_sizes']) * len(params['STEP4']['pretrain']['batch_size']) * len(params['STEP4']['pretrain']['learning_rate']) * len(params['STEP4']['pretrain']['epochs']) * len(params['STEP4']['finetune']['batch_size']) * len(params['STEP4']['finetune']['learning_rate']) * len(params['STEP4']['finetune']['epochs'])
     i = 0
+      
     for hidden_layers_sizes in params['STEP4']['hidden_layers_sizes']:
         for batch_size_pretrain in params['STEP4']['pretrain']['batch_size']:
             for learning_rate_pretrain in params['STEP4']['pretrain']['learning_rate']:
                 for epochs_pretrain in params['STEP4']['pretrain']['epochs']: 
                     for hidden_recurrent in params['STEP4']['hidden_recurrent']: 
+			pretrain_params = ""
                         pretrain_params = {
                         'dataset' : dataset, 
                         'hidden_layers_sizes' : hidden_layers_sizes,
@@ -314,25 +318,36 @@ def predict(dataset, model, brandcodes=['0101'], label_type=1, y_type=1):
                         'k' : params['STEP4']['k'],
                         'hidden_recurrent': hidden_recurrent,
                         'n_outs' : (1 + y_type)
-                        }   
+                        }
+			pretrain_model = ""   
                         pretrain_model = model.pretrain(pretrain_params, y_type)
-                        pretrain_params = get_model_params(pretrain_model)
-                        for batch_size_finetune in params['STEP4']['finetune']['batch_size']:
+                        pretrain_params = ""
+			pretrain_params = get_model_params(pretrain_model)
+                        for brandcode in brandcodes :
+			  change_brand(dataset,brandcode)   
+                          for batch_size_finetune in params['STEP4']['finetune']['batch_size']:
                             for learning_rate_finetune in params['STEP4']['finetune']['learning_rate']:
                                 for epochs_finetune in params['STEP4']['finetune']['epochs']: 
-                                    finetune_params = {
+				    set_model_params = (pretrain_model,pretrain_params)
+				    finetune_params = ""
+				    finetune_params = {
                                         'dataset' : dataset,
                                         'model' : pretrain_model,
                                         'finetune_lr' : learning_rate_finetune,
                                         'finetune_batch_size' : batch_size_finetune,
                                         'finetune_epochs' : epochs_finetune
                                     }
+				    finetune_model = ""
+				    best_validation_loss = ""
+				    test_score = ""
+				    best_epoch = ""
                                     finetune_model, best_validation_loss, test_score, best_epoch = model.finetune(finetune_params, y_type)
                                     i += 1
                                     print '%d / %d is done...' % (i , all_size)
                                     out = open(model_dirs['STEP4_logs'], 'a')
-                                    out.write('%f,%f,%s,%s,%d,%f,%d,%d,%f,%d,%s\n' % (best_validation_loss, test_score, '0101', str(hidden_layers_sizes).replace(',', ' '), batch_size_pretrain, learning_rate_pretrain, epochs_pretrain, batch_size_finetune, learning_rate_finetune, epochs_finetune, str(datetime.datetime.now())))
+                                    out.write('%f,%f,%s,%s,%d,%f,%d,%d,%d,%f,%d,%d,%s\n' % (best_validation_loss, test_score, brandcode, str(hidden_layers_sizes).replace(',', ' '), batch_size_pretrain, learning_rate_pretrain, hidden_recurrent, epochs_pretrain, batch_size_finetune, learning_rate_finetune, epochs_finetune,label_type, str(datetime.datetime.now())))
                                     out.close()
+			gc.collect()
 ##############
 ###  Main  ###
 ##############
@@ -401,16 +416,20 @@ if __name__ == '__main__':
             print 'start SdA_regression'
             model = SdA_regression
         elif m == 2:
-            print 'start DBN_regression'
-            model = DBN_regression
+            print 'start DBN'
+            model = DBN
         elif m == 4:
             print 'start RNNRBM_MLP'
             model = RNNRBM_MLP
         elif m == 5:
             print 'start RNNRBM_DBN'
             model = RNNRBM_DBN
+        elif m == 6:
+            print 'start stacked_RNNRBM'
+            model = stacked_RNNRBM
         brandcodes = ['0101', '7203', '6758', '6502', '7201', '6501', '6702', '6753', '8058', '8031', '7751']
-        predict(dataset, model, brandcodes=brandcodes, label_type=l, y_type=int(l > 2))
+        #brandcodes = ['6702', '6753', '8058', '8031', '7751']
+	predict(dataset, model, brandcodes=brandcodes, label_type=l, y_type=int(l > 2))
 
 
 

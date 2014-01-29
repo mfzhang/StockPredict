@@ -51,15 +51,15 @@ params = {
         'model' : 'sda',
         'corruption_levels' : [.5, .3, .5],
         'k' : 1,
-        'hidden_layers_sizes' : [25],
+        'hidden_layers_sizes' : [1000],
         'pretrain' : {
             'batch_size' : 20,
-            'learning_rate' : 0.0001,
+            'learning_rate' : 1e-3,
             'epochs' : 100
         },
         'finetune' : {
-            'batch_size' : 50,
-            'learning_rate' : 0.005,
+            'batch_size' : 20,
+            'learning_rate' : 1e-4,
             'epochs' : 200
         }
     }
@@ -173,6 +173,7 @@ def msg_loop(stdscr):
             msg += '以下から予測モデルに利用するモデルを選択して下さい．\n'
             msg += '1: SdA\n'
             msg += '2: DBN\n'
+            msg += '3: SdA + RNN\n'
             msg += '7: RNN\n'
             msg += '8: SVM / SVR\n'
             msg += '9: Random Forest Classifier / Regressor\n'
@@ -209,7 +210,7 @@ def build_CompressModel():
     x = T.matrix('x')  # the data is presented as rasterized images
     if params['STEP1']['model'] == 'rbm':
         model = RBM(input=x, n_visible=dataset.phase1_input_size, n_hidden=params['STEP1']['n_hidden'], reg_weight=params['STEP1']['reg_weight'], corruption_level=params['STEP1']['corruption_level'])
-        train_rbm(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], outdir=model_dirs['STEP1'])
+        train_rbm(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], outdir=model_dirs['STEP1'], batch_size=params['STEP1']['batch_size'])
     elif params['STEP1']['model'] == 'sda':
         sda_params = {
             'dataset' : dataset, 
@@ -285,8 +286,8 @@ def unify_kijis(dataset):
 ######################################################################
 
 def reguralize_data(dataset, brandcodes):
+    idf = np.log(float(dataset.phase2['train']['x'].shape[0]) / dataset.phase2['train']['x'].sum(axis=0))
     for datatype in ['train', 'valid', 'test']:
-        idf = np.log(float(dataset.phase2['train']['x'].shape[0]) / dataset.phase2['train']['x'].sum(axis=0))
         dataset.phase2[datatype]['x'] = (dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0)) / (dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0) + 0.001).max(axis=0)
         dataset.phase2[datatype]['x'] *= idf
         # dataset.phase2[datatype]['x'] = ((dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0)) ** 2) / ((dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0) + 0.001) ** 2).max(axis=0)
