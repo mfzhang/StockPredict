@@ -234,6 +234,7 @@ class RNNRBM_MLP(object):
         def test_score():
             return [test_score_i(i) for i in xrange(n_test_batches)]
 
+        train_set_x, train_set_y, valid_set_x, valid_set_y, test_set_x, test_set_y = "", "", "", "", "", ""
         return train_fn, valid_score, test_score      
 
 
@@ -302,7 +303,8 @@ def pretrain(pretrain_params,y_type):
     print >> sys.stderr, ('The pretraining code for file ' +
                           os.path.split(__file__)[1] +
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
-    
+
+    train_set_x, train_set_y, valid_set_x, valid_set_y, test_set_x, test_set_y = "", "", "", "", "", ""    
     return model
 
 
@@ -408,7 +410,7 @@ def finetune(finetune_params, y_type):
     print test_score
     #pdb.set_trace()
     
-    
+    train_set_x, train_set_y, valid_set_x, valid_set_y, test_set_x, test_set_y = "", "", "", "", "", "" 
     return model, best_validation_loss, test_score, best_epoch
 
 if __name__ == '__main__':

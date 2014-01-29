@@ -37,7 +37,7 @@ params = {
     'STEP1' : {
         'beta' : 1.,
         'model' : 'sae',
-        'n_hidden' : 1000,
+        'n_hidden' : 5000,
         'learning_rate' : 0.05
     },
     'STEP3' : {
@@ -46,18 +46,18 @@ params = {
     'STEP4' : {
         'model' : 'sda',
         'corruption_levels' : [.3, .3, .3],
-        'hidden_recurrent' : 10,
+        'hidden_recurrent' : 100,
         'k' : 1,
-        'hidden_layers_sizes' : [2500, 2500],
+        'hidden_layers_sizes' : [3750, 3750,2500],
         'pretrain' : {
-            'batch_size' : 50,
-            'learning_rate' : 0.05,
-            'epochs' : 100
+            'batch_size' : 30,
+            'learning_rate' : 0.001,
+            'epochs' : 200
         },
         'finetune' : {
-            'batch_size' : 50,
-            'learning_rate' : 0.0001,
-            'epochs' : 200
+            'batch_size' : 100,
+            'learning_rate' : 0.01,
+            'epochs' : 100
         }
     }
 }
@@ -368,7 +368,7 @@ if __name__ == '__main__':
             model = SdA_regression
         elif m == 2:
             print 'start DBN_regression'
-            model = DBN_regression
+            model = DBN
         elif m == 4:
             print 'start RNNRBM_MLP'
             model = RNNRBM_MLP
