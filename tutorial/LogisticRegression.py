@@ -23,7 +23,7 @@ class LogisticRegression(object):
     determine a class membership probability.
     """
 
-    def __init__(self, input, n_in, n_out, y_type):
+    def __init__(self, input, n_in, n_out, y_type, W=None, b=None):
         """ Initialize the parameters of the logistic regression
 
         :param input: symbolic variable that describes the input of the
@@ -41,14 +41,19 @@ class LogisticRegression(object):
         """
 
         # initialize with 0 the weights W as a matrix of shape (n_in, n_out)
-        self.W = theano.shared(value=numpy.zeros((n_in, n_out),
-                                                 dtype=theano.config.floatX),
-                                name='W', borrow=True)
+        if W is None:
+            self.W = theano.shared(value=numpy.zeros((n_in, n_out),
+                                                     dtype=theano.config.floatX),
+                                    name='W', borrow=True)
+        else:
+            self.W = W
         # initialize the baises b as a vector of n_out 0s
-        self.b = theano.shared(value=numpy.zeros((n_out,),
-                                                 dtype=theano.config.floatX),
-                               name='b', borrow=True)
-
+        if b is None:
+            self.b = theano.shared(value=numpy.zeros((n_out,),
+                                                     dtype=theano.config.floatX),
+                                   name='b', borrow=True)
+        else:
+            self.b = b
         # compute vector of class-membership probabilities in symbolic form
         
         if y_type == 0:  ###   regression

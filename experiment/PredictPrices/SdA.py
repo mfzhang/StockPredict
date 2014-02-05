@@ -38,7 +38,7 @@ class SdA(object):
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
                  hidden_layers_sizes=[500, 500], n_outs=1,
-                 corruption_levels=[0.1, 0.1], y_type=1, sparse_weight=0
+                 corruption_levels=[0.1, 0.1], y_type=1, sparse_weight=0,
                  recurrent=False, dropout=False):
         """ This class is made to support a variable number of layers.
 
@@ -80,7 +80,10 @@ class SdA(object):
         if y_type==0:
             self.y = T.matrix('y')  # the labels are presented as 1D vector
         else: 
-            self.y = T.ivector('y')  # the labels are presented as 1D vector
+            if recurrent:
+                self.y = T.matrix(name='y', dtype='int32')
+            else:
+                self.y = T.ivector('y')  # the labels are presented as 1D vector
                                  # of [int] labels
 
 
@@ -112,6 +115,7 @@ class SdA(object):
             else:
                 layer_input = self.sigmoid_layers[-1].output
             if dropout == True:
+                print 'Dropout'
                 sigmoid_layer = DropoutHiddenLayer(rng=numpy_rng,
                                                     input=layer_input,
                                                     n_in=input_size,
@@ -156,11 +160,15 @@ class SdA(object):
                 self.dA_layers.append(dA_layer)
 
         # We now need to add a logistic layer on top of the MLP
+        if y_type == 0:
+            output_type = 'real'
+        else:
+            output_type = 'binary'
         if len(self.sigmoid_layers) > 0:
             if recurrent == True:
                 self.logLayer = RNN(input=self.sigmoid_layers[-1].output, n_in=hidden_layers_sizes[-1],
-                                   n_hidden=500, n_out=n_outs,
-                                   activation=T.tanh, output_type='real',
+                                   n_hidden=500, n_out=1,
+                                   activation=T.tanh, output_type=output_type,
                                    use_symbolic_softmax=False)
 
             else:
@@ -171,9 +179,10 @@ class SdA(object):
                                  )
         else:
             if recurrent == True:
+                
                 self.logLayer = RNN(input=self.sigmoid_layers[-1].output, n_in=hidden_layers_sizes[-1],
-                                   n_hidden=500, n_out=n_outs,
-                                   activation=T.tanh, output_type='real',
+                                   n_hidden=500, n_out=1,
+                                   activation=T.tanh, output_type=output_type,
                                    use_symbolic_softmax=False)
             else:
                 self.logLayer = LogisticRegression(
@@ -182,10 +191,15 @@ class SdA(object):
                                  y_type=y_type
                                  )
         if recurrent == True:
+            if y_type == 0:
+                outputs=T.round(self.logLayer.y_pred)
+            else:
+                outputs=T.round(self.logLayer.p_y_given_x)
             self.get_prediction = theano.function(
                 inputs=[self.x],
-                outputs=T.round(self.logLayer.y_pred)
+                outputs=outputs
                 )
+
         else:
             self.get_prediction = theano.function(
                 inputs=[self.x],
@@ -201,13 +215,14 @@ class SdA(object):
         # compute the cost for second phase of training,
         # defined as the negative log likelihood
         # self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
-        if y_type == 0:
-            if recurrent == True:
-                self.finetune_cost = self.logLayer.mse(self.y)
-            else:
-                self.finetune_cost = self.logLayer.squared_error(self.y)
+
+        if recurrent == True:
+            self.finetune_cost = self.logLayer.loss(self.y)
         else:
-            self.finetune_cost = self.logLayer.negative_log_likelihood(self.y) 
+            if y_type == 0:
+                self.finetune_cost = self.logLayer.squared_error(self.y)
+            else:
+                self.finetune_cost = self.logLayer.negative_log_likelihood(self.y) 
         # compute the gradients with respect to the model parameters
         # symbolic variable that points to the number of errors made on the
         # minibatch given by self.x and self.y
@@ -446,7 +461,9 @@ def pretrain(pretrain_params):
     pretrain_epochs = pretrain_params['pretrain_epochs']
     corruption_levels = pretrain_params['corruption_levels']
     y_type = pretrain_params['y_type']
+    recurrent = pretrain_params['recurrent']
     n_outs = pretrain_params['n_outs']
+    dropout = pretrain_params['dropout']
     ############################
 
     train_set_x = theano.shared(dataset.phase2['train']['x'])
@@ -474,7 +491,7 @@ def pretrain(pretrain_params):
     
     model = SdA(numpy_rng=numpy_rng, n_ins=train_set_x.get_value().shape[1],
               hidden_layers_sizes=hidden_layers_sizes,
-              n_outs=n_outs, y_type=y_type)
+              n_outs=n_outs, y_type=y_type, recurrent=recurrent, dropout=dropout)
 
     #########################
     # PRETRAINING THE MODEL #

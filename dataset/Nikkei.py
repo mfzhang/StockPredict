@@ -9,7 +9,8 @@ import json, codecs, cPickle, gzip, datetime, pdb, sys
 ##  日ごと / 記事ごとに出現する単語のIDをまとめたデータセットのディレクトリ
 
 # wordidset_all = "dataset/dataset/chi2-unified.wordidset"
-wordidset_all = "dataset/dataset/chi2-unified-sentence-10000.wordidset"
+wordidset_sentence = "dataset/dataset/chi2-unified-sentence-10000.wordidset"
+wordidset_article = "dataset/dataset/chi2-unified-article-10000.wordidset"
 
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified.wordidset"
 # wordidset_all = "/home/fujikawa/StockPredict/res-int/Nikkei/DataForDL/FeatureVectors/chi2-unified-sentence.wordidset"
@@ -39,13 +40,22 @@ class Nikkei():
         """
 
         ##  データセットの読み込み
-        # print dataset_type
-        datasetdir = wordidset_chi2_selected
-        n_dic = 1000
-        if dataset_type != 'chi2_selected':
-            print dataset_type
+        
+        print dataset_type
+        if dataset_type == 'chi2_selected':
+            datasetdir = wordidset_chi2_selected
+            n_dic = 1000
+        elif dataset_type == 'article':
+            n_dic = len(json.load(open(dicdir)))
+            datasetdir = wordidset_article
+        elif dataset_type == 'sentence':
+            n_dic = len(json.load(open(dicdir)))
+            datasetdir = wordidset_sentence
+        else:
+            sys.exit()
             datasetdir = wordidset_all
             n_dic = len(json.load(open(dicdir)))
+
         self.raw_data = cPickle.load(open(datasetdir))
         print n_dic
         self.type = type
@@ -62,6 +72,11 @@ class Nikkei():
         self.years['train'] = [1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006]
         self.years['valid'] = [2007]
         self.years['test'] = [2008]
+
+        print 'year change'
+        # self.years['train'] = [1999, 2000, 2001, 2002, 2003, 2004]
+        # self.years['valid'] = [2005, 2006]
+        # self.years['test'] = [2007, 2008]
 
         ################################################
         ###  PHASE1: 複数記事の圧縮表現獲得部分のデータ設定  ###
@@ -112,6 +127,12 @@ class Nikkei():
         count_zero = 0
         count_one = 0
         count_two = 0
+        print 'year change'
+        self.years['train'] = [1999, 2000, 2001, 2002, 2003, 2004]
+        self.years['valid'] = [2005, 2006]
+        self.years['test'] = [2007, 2008]
+        ng_brands = []
+        previous_year, previous_date = None, None
         self.pricelist = cPickle.load(open(pricelistdir))
         for datatype in ['train', 'valid', 'test']:
             for year in self.years[datatype]:
@@ -126,9 +147,12 @@ class Nikkei():
                             ##!! TODO : 当日の終値と始値の差を予測するタスクにしているが、MACDを利用したり、もう少し長期的に見たりいろいろできるので要検討
                                 label = 0
                                 ## 回帰 : (終値 - 始値) / 終値
-                                if date not in self.pricelist[brandcode][year]:
-                                    print '!!!!!!!!  ' + brandcode + ' : ' + str(date)
-                                    break
+                                if (year not in self.pricelist[brandcode]) or (date not in self.pricelist[brandcode][year]):
+                                    if brandcode not in ng_brands:
+                                        print '!!!!!!!!  ' + brandcode + ' : ' + str(date)
+                                        ng_brands.append(brandcode)
+                                    # break
+                                    # break
                                 else:
                                     if label_type == 1:
                                         if self.pricelist[brandcode][year][date]['closing_price'] == 0:
@@ -143,7 +167,17 @@ class Nikkei():
                                         label = int((self.pricelist[brandcode][year][date]['closing_price'] - self.pricelist[brandcode][year][date]['opening_price']) > 0)
                                     ## 二値分類 : 翌日MACD - 当日MACD <> 0
                                     elif label_type == 4:
+                                        diff = self.pricelist[brandcode][year][date]['macd_tomorrow'] - self.pricelist[brandcode][year][date]['macd']
                                         label = int((self.pricelist[brandcode][year][date]['macd_tomorrow'] - self.pricelist[brandcode][year][date]['macd']) > 0)
+                                    elif label_type == 5:
+                                        if previous_year == None:
+                                            label = 0
+                                        else:
+                                            previous_diff = self.pricelist[brandcode][previous_year][previous_date]['macd_tomorrow'] - self.pricelist[brandcode][previous_year][previous_date]['macd']
+                                            diff = self.pricelist[brandcode][year][date]['macd_tomorrow'] - self.pricelist[brandcode][year][date]['macd']
+                                            label = int((previous_diff > 0) != (diff > 0))
+                                        
+                                        
 
                                     ## y のデータを格納する配列の準備
                                     if brandcode not in self.phase2[datatype]:
@@ -154,6 +188,8 @@ class Nikkei():
                                         self.phase2[datatype][brandcode].append([label])
                                     else:
                                         self.phase2[datatype][brandcode].append(label)
+                            previous_year = year
+                            previous_date = date
             # pdb.set_trace()
 
             if dataset_type == 'chi2_selected':
@@ -162,7 +198,11 @@ class Nikkei():
                 self.phase2[datatype]['x'] = np.asarray(self.phase2[datatype]['x'], dtype=theano.config.floatX)
 
             for brandcode in brandcodes:
-                self.phase2[datatype][brandcode] = np.asarray(self.phase2[datatype][brandcode], dtype=theano.config.floatX)
+                try:
+                    self.phase2[datatype][brandcode] = np.asarray(self.phase2[datatype][brandcode], dtype=theano.config.floatX)
+                except:
+                    pass
+
 
 # theano、scipyなど、様々なデータ形式へ変換して取得
     def get_data(self, data, type=None):
@@ -242,7 +282,7 @@ class Nikkei():
                 self.baseline[year][date] = vectors_baseline
 
                 if experiment_type != 'baseline':
-                    pdb.set_trace()
+
                     daily_vector_maxpool = model.get_maxpool(vectors)
                     daily_vector_meanpool = model.get_meanpool(vectors)  
                     self.unified_max[year][date] = daily_vector_maxpool

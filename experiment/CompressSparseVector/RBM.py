@@ -100,12 +100,17 @@ class RBM(object):
         self.get_propup_vector = theano.function([vector], self.propup(vector)[1])
         self.get_propup_matrix = theano.function([matrix], self.propup(matrix)[1])
         matrix_maxpool = T.matrix()
+        matrix_meanpool = T.matrix()
         self.get_maxpool = theano.function([matrix_maxpool], T.max(self.propup(matrix_maxpool)[1], axis=0))
+        self.get_meanpool = theano.function([matrix_meanpool], T.mean(self.propup(matrix_meanpool)[1], axis=0))
+
         # self.get_maxpool = numpy.max(self.get_propup_matrix, axis=0)
     def activate_function(self, arg):
         
         def num(n):
             return T.cast(n, dtype=theano.config.floatX)
+            
+        # return lambda x: T.maximum(0.0, x)
         
         return T.nnet.sigmoid(arg)
         return num(0.99999) * T.tanh(arg + T.cast(0.0001, dtype=theano.config.floatX))

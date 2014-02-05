@@ -15,9 +15,8 @@ from theano.tensor.shared_randomstreams import RandomStreams
 sys.path.append('../../tutorial')
 
 from tutorial.LogisticRegression import LogisticRegression
-from tutorial.HiddenLayer import HiddenLayer, DropoutHiddenLayer, _dropout_from_layer
+from tutorial.HiddenLayer import HiddenLayer, DropoutHiddenLayer
 from tutorial.rbm import RBM
-from theano.ifelse import ifelse
 
 
 class DBN(object):
@@ -32,7 +31,7 @@ class DBN(object):
     """
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
-                 hidden_layers_sizes=[500, 500], n_outs=1, y_type=1, gbrbm=False, dropout=False, activation_function=None):
+                 hidden_layers_sizes=[500, 500], n_outs=1, y_type=1, gbrbm=False, dropout=False):
         """This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -54,25 +53,10 @@ class DBN(object):
         :param n_outs: dimension of the output of the network
         """
 
-        self.dropout = dropout
         self.sigmoid_layers = []
-        self.dropout_layers = []
         self.rbm_layers = []
         self.params = []
         self.n_layers = len(hidden_layers_sizes)
-
-        rectified_linear_activation = lambda x: T.maximum(0.0, x)
-        # activation_function = T.nnet.sigmoid
-        if not activation_function:
-            print 'Sigmoid'
-            self.activation_function = T.nnet.sigmoid
-        else:
-            if activation_function == 'ReLU':
-                print 'ReLU'
-                self.activation_function = rectified_linear_activation
-            else:
-                print 'Sigmoid'
-                self.activation_function = T.nnet.sigmoid
 
         assert self.n_layers > 0
 
@@ -113,30 +97,15 @@ class DBN(object):
             # the first layer
             if i == 0:
                 layer_input = self.x
-                if dropout:
-                    dropout_layer_input = _dropout_from_layer(numpy_rng, self.x, p=0.2)
             else:
                 layer_input = self.sigmoid_layers[-1].output
-                if dropout:
-                    dropout_layer_input = self.dropout_layers[-1].output
             if dropout:
                 print 'Dropout'
-                dropout_layer = DropoutHiddenLayer(rng=numpy_rng,
-                                                    input=dropout_layer_input,
+                sigmoid_layer = DropoutHiddenLayer(rng=numpy_rng,
+                                                    input=layer_input,
                                                     n_in=input_size,
                                                     n_out=hidden_layers_sizes[i],
-                                                    activation=self.activation_function,
-                                                    )
-                sigmoid_layer = HiddenLayer(rng=numpy_rng,
-                                            input=layer_input,
-                                            n_in=input_size,
-                                            n_out=hidden_layers_sizes[i],
-                                            activation=self.activation_function,
-                                            W=dropout_layer.W * (0.8 if i == 0 else 0.5),
-                                            b=dropout_layer.b
-                                            )
-                self.dropout_layers.append(dropout_layer)
-                self.params.extend(dropout_layer.params)
+                                                    activation=T.nnet.sigmoid)
 
             else:
                 sigmoid_layer = HiddenLayer(rng=numpy_rng,
@@ -144,89 +113,58 @@ class DBN(object):
                                             n_in=input_size,
                                             n_out=hidden_layers_sizes[i],
                                             activation=T.nnet.sigmoid)
-                self.params.extend(sigmoid_layer.params)
 
             # add the layer to our list of layers
             self.sigmoid_layers.append(sigmoid_layer)
-            
+
+            # its arguably a philosophical question...  but we are
+            # going to only declare that the parameters of the
+            # sigmoid_layers are parameters of the DBN. The visible
+            # biases in the RBM are parameters of those RBMs, but not
+            # of the DBN.
+            self.params.extend(sigmoid_layer.params)
 
             # Construct an RBM that shared weights with this layer
-            if dropout:
-                layer = dropout_layer
-            else:
-                layer = sigmoid_layer
-
             rbm_layer = RBM(numpy_rng=numpy_rng,
                             theano_rng=theano_rng,
                             input=layer_input,
                             n_visible=input_size,
                             n_hidden=hidden_layers_sizes[i],
-                            W=layer.W,
-                            hbias=layer.b,
+                            W=sigmoid_layer.W,
+                            hbias=sigmoid_layer.b,
                             y_type=y_type,
                             gbrbm=gbrbm
                             )
-
             self.rbm_layers.append(rbm_layer)
-        if dropout:
-            self.dropout_output_layer = LogisticRegression(
-                input=self.dropout_layers[-1].output,
-                n_in=hidden_layers_sizes[-1],
-                n_out=n_outs, y_type=y_type)
 
-            self.logLayer = LogisticRegression(
-                input=self.sigmoid_layers[-1].output,
-                n_in=hidden_layers_sizes[-1],
-                n_out=n_outs, y_type=y_type,
-                W=self.dropout_output_layer.W * 0.5,
-                b=self.dropout_output_layer.b)
-        else:
-            self.logLayer = LogisticRegression(
-                input=self.sigmoid_layers[-1].output,
-                n_in=hidden_layers_sizes[-1],
-                n_out=n_outs, y_type=y_type)
-            
+        # We now need to add a logistic layer on top of the MLP
+        self.logLayer = LogisticRegression(
+            input=self.sigmoid_layers[-1].output,
+            n_in=hidden_layers_sizes[-1],
+            n_out=n_outs, y_type=y_type)
+        
         self.get_prediction = theano.function(
-	    inputs = [self.x],
-	    outputs = [self.logLayer.y_pred]
-	    )
+        inputs = [self.x],
+        outputs = [self.logLayer.y_pred]
+        )
+
         self.get_py = theano.function(
         inputs = [self.x],
         outputs = [self.logLayer.p_y_given_x]
         )
-
-        if dropout:
-            self.get_prediction_dropout = theano.function(
-            inputs = [self.x],
-            outputs = [self.dropout_output_layer.y_pred]
-            )
-            self.get_py = theano.function(
-            inputs = [self.x],
-            outputs = [self.dropout_output_layer.p_y_given_x]
-            )
-        if dropout:
-            self.params.extend(self.dropout_output_layer.params)
-        else:
-            self.params.extend(self.logLayer.params)
-        
+        self.params.extend(self.logLayer.params)
 
         # compute the cost for second phase of training, defined as the
         # negative log likelihood of the logistic regression (output) layer
         #self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
         if y_type == 0:
-            if dropout:
-                self.dropout_finetune_cost = self.dropout_output_layer.squared_error(self.y) 
             self.finetune_cost = self.logLayer.squared_error(self.y)
         else:
-            if dropout:
-                self.dropout_finetune_cost = self.dropout_output_layer.negative_log_likelihood(self.y) 
             self.finetune_cost = self.logLayer.negative_log_likelihood(self.y) 
 
         # compute the gradients with respect to the model parameters
         # symbolic variable that points to the number of errors made on the
         # minibatch given by self.x and self.y
-        if dropout:
-            self.dropout_errors = self.dropout_output_layer.errors(self.y)
         self.errors = self.logLayer.errors(self.y)
 
     def pretraining_functions(self, train_set_x, batch_size, k):
@@ -311,80 +249,37 @@ class DBN(object):
         n_test_batches /= batch_size
 
         index = T.lscalar('index')  # index to a [mini]batch
-        epoch = T.scalar()
 
         # compute the gradients with respect to the model parameters
-        if self.dropout:
-            gparams = T.grad(self.dropout_finetune_cost, self.params)
-        else:
-            gparams = T.grad(self.finetune_cost, self.params)
-
-        ############################################################
-
-        gparams_mom = []
-        for param in self.params:
-            gparam_mom = theano.shared(numpy.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX))
-            gparams_mom.append(gparam_mom)
-
-        mom = ifelse(epoch < 500,
-                0.5*(1. - epoch/500.) + 0.99*(epoch/500.),
-                0.99)
-
-        # Update the step direction using momentum
-        updates = {}
-        for gparam_mom, gparam in zip(gparams_mom, gparams):
-            updates[gparam_mom] = mom * gparam_mom + (1. - mom) * gparam
-
-        squared_filter_length_limit = 15.0
-
-
-        # ... and take a step along that direction
-        for param, gparam_mom in zip(self.params, gparams_mom):
-            stepped_param = param - learning_rate * updates[gparam_mom]
-
-            # This is a silly hack to constrain the norms of the rows of the weight
-            # matrices.  This just checks if there are two dimensions to the
-            # parameter and constrains it if so... maybe this is a bit silly but it
-            # should work for now.
-            if param.get_value(borrow=True).ndim == 2:
-                squared_norms = T.sum(stepped_param**2, axis=1).reshape((stepped_param.shape[0],1))
-                scale = T.clip(T.sqrt(squared_filter_length_limit / squared_norms), 0., 1.)
-                updates[param] = stepped_param * scale
-            else:
-                updates[param] = stepped_param
-
-        #########################################################
+        gparams = T.grad(self.finetune_cost, self.params)
 
         # compute list of fine-tuning updates
-        # updates = []
-        # for param, gparam in zip(self.params, gparams):
-        #     updates.append((param, param - gparam * learning_rate))
+        updates = []
+        for param, gparam in zip(self.params, gparams):
+            updates.append((param, param - gparam * learning_rate))
 
-        #########################################################
-
-        output = self.dropout_finetune_cost if self.dropout else self.finetune_cost
-        train_fn = theano.function(inputs=[epoch, index],
-              outputs=output,
+        train_fn = theano.function(inputs=[index],
+              outputs=self.finetune_cost,
               updates=updates,
               givens={self.x: train_set_x[index * batch_size:
                                           (index + 1) * batch_size],
                       self.y: train_set_y[index * batch_size:
                                           (index + 1) * batch_size]},
-	                    name='train')
+                        name='train')
 
         test_score_i = theano.function([index], self.errors,
                  givens={self.x: test_set_x[index * batch_size:
                                             (index + 1) * batch_size],
                          self.y: test_set_y[index * batch_size:
                                             (index + 1) * batch_size]},
-		                name='test')
+                        name='test')
 
         valid_score_i = theano.function([index], self.errors,
               givens={self.x: valid_set_x[index * batch_size:
                                           (index + 1) * batch_size],
                       self.y: valid_set_y[index * batch_size:
                                           (index + 1) * batch_size]},
-		                name='valid')
+                        name='valid')
 
         # Create a function that scans the entire validation set
         def valid_score():
@@ -413,7 +308,6 @@ def pretrain(pretrain_params):
     n_outs = pretrain_params['n_outs']
     gbrbm = pretrain_params['gbrbm']
     dropout = pretrain_params['dropout']
-    activation_function = pretrain_params['activation_function']
     ############################
     
     train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
@@ -434,7 +328,7 @@ def pretrain(pretrain_params):
     # construct the Deep Belief Network
     model = DBN(numpy_rng=numpy_rng, n_ins=train_set_x.get_value().shape[1],
               hidden_layers_sizes=hidden_layers_sizes,
-              n_outs=n_outs, y_type=y_type, gbrbm=gbrbm, dropout=dropout, activation_function=activation_function)
+              n_outs=n_outs, y_type=y_type, gbrbm=gbrbm, dropout=dropout)
 
     #########################
     # PRETRAINING THE MODEL #
@@ -529,7 +423,7 @@ def finetune(finetune_params):
         epoch = epoch + 1
         for minibatch_index in xrange(n_train_batches):
 
-            minibatch_avg_cost = train_fn(epoch, minibatch_index)
+            minibatch_avg_cost = train_fn(minibatch_index)
             iter = (epoch - 1) * n_train_batches + minibatch_index
 
             if (iter + 1) % validation_frequency == 0:

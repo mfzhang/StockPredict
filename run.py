@@ -16,11 +16,22 @@ from experiment.CompressSparseVector.SparseAutoencoder import SparseAutoencoder,
 from experiment.CompressSparseVector.RBM import RBM, train_rbm
 
 from experiment.PredictPrices import SdA
-from experiment.PredictPrices import SdA_RNN
-from experiment.PredictPrices import DBN
+# from experiment.PredictPrices import SdA_RNN
+# from experiment.PredictPrices import DBN
 
 from experiment.PredictPrices import RNN
 import curses
+
+
+from experiment.PredictPrices import RNNRBM_MLP
+from experiment.PredictPrices import RNNRBM_DBN 
+from experiment.PredictPrices import DBN
+
+from nikkei225 import getNikkei225
+
+
+import warnings
+warnings.filterwarnings("ignore")
 
 
 
@@ -35,32 +46,38 @@ default_model_dir = 'experiment/Model'
 dataset_type = 'test' # ['all' / 'chi2_selected']
 
 params = {
+
     'experiment_type' : 'proposed',
+    'dataset_type' : 'article',
+    'activation_function' : 'sigmoid',
     'STEP1' : {
         'reg_weight' : 1.,
         'model' : 'sae',
         'n_hidden' : 1000,
         'learning_rate' : 0.05,
         'corruption_level' : 0.5,
-        'batch_size' : 50
+        'batch_size' : 30
     },
     'STEP3' : {
         'brandcode' : '0101'
     },
     'STEP4' : {
-        'model' : 'sda',
+        'dropout' : True,
+        'recurrent' : False,
+        'model' : 'dbn',
         'corruption_levels' : [.5, .3, .5],
+        'hidden_recurrent' : 100,
         'k' : 1,
-        'hidden_layers_sizes' : [1000],
+        'hidden_layers_sizes' : [1000, 500],
         'pretrain' : {
-            'batch_size' : 20,
-            'learning_rate' : 1e-3,
+            'batch_size' : 50,
+            'learning_rate' : 1e-6,
             'epochs' : 100
         },
         'finetune' : {
-            'batch_size' : 20,
-            'learning_rate' : 1e-4,
-            'epochs' : 200
+            'batch_size' : 50,
+            'learning_rate' : 1e-2,
+            'epochs' : 300
         }
     }
 }
@@ -85,6 +102,7 @@ labeltype_msg.append('1 : 回帰 : (終値 - 始値) / 終値')
 labeltype_msg.append('2 : 回帰 : 翌日MACD - 当日MACD')
 labeltype_msg.append('3 : 二値分類 : (終値 - 始値) <> 0')
 labeltype_msg.append('4 : 二値分類 : 翌日MACD - 当日MACD <> 0')
+labeltype_msg.append('5 : 二値分類 : MACDの差分')
 
 x, y, z, i, l, m = '', '', '', '', '', ''
 
@@ -174,6 +192,7 @@ def msg_loop(stdscr):
             msg += '1: SdA\n'
             msg += '2: DBN\n'
             msg += '3: SdA + RNN\n'
+            msg += '4: RNN-RBM + DBN\n'
             msg += '7: RNN\n'
             msg += '8: SVM / SVR\n'
             msg += '9: Random Forest Classifier / Regressor\n'
@@ -183,7 +202,7 @@ def msg_loop(stdscr):
             curses.flushinp()
             stdscr.clear()
 
-            if l <= 4 and m <= 9:
+            if l <= 5 and m <= 9:
                 break 
             else:
                 print '  ** 注 **     適切な値を入力して下さい。\n'
@@ -204,7 +223,7 @@ def load_model(model_type='sae', input=None, params_dir=None):
 
 def build_CompressModel():
     print 'STEP 1 start...'
-    dataset = Nikkei(dataset_type=params['experiment_type'], brandcode=params['STEP3']['brandcode'])
+    dataset = Nikkei(dataset_type=params['dataset_type'], brandcode=params['STEP3']['brandcode'])
     # pdb.set_trace()
     index = T.lscalar()    # index to a [mini]batch
     x = T.matrix('x')  # the data is presented as rasterized images
@@ -225,7 +244,7 @@ def build_CompressModel():
         }
         model = SdA.compress(sda_params)
         pre_params = get_model_params(model)
-        pdb.set_trace()
+
         while(True):
             try:
                 f_out = open(model_dirs['STEP1'], 'w')
@@ -240,12 +259,12 @@ def build_CompressModel():
 
 def retrain_CompressModel():
     print 'STEP 1 start...'
-    dataset = Nikkei(dataset_type=params['experiment_type'], brandcode=params['STEP3']['brandcode'])
+    dataset = Nikkei(dataset_type=params['dataset_type'], brandcode=params['STEP3']['brandcode'])
     index = T.lscalar()    # index to a [mini]batch
     x = T.matrix('x')  # the data is presented as rasterized images
     if params['STEP1']['model'] == 'rbm':
         model = load_model(model_type='rbm', input=x, params_dir=model_dirs['STEP1'])
-        train_rbm(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], outdir=model_dirs['STEP1'])
+        train_rbm(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], batch_size=params['STEP1']['batch_size'], outdir=model_dirs['STEP1'])
     # elif params['STEP1']['model'] == 'sda':
     #     presae_dir = '%s/%s/h%d_lr%s_b%s_c%s.%s' % (default_model_dir, 'STEP1', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['corruption_level']), 'sae')
     #     x2 = T.matrix('x')
@@ -254,7 +273,7 @@ def retrain_CompressModel():
     #     train_sae2(input=x, model=model, pre_model=pre_model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], outdir=model_dirs['STEP1'])
     else:
         model = load_model(model_type='sae', input=x, params_dir=model_dirs['STEP1'])
-        train_sae(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], outdir=model_dirs['STEP1'])
+        train_sae(input=x, model=model, dataset=dataset, learning_rate=params['STEP1']['learning_rate'], batch_size=params['STEP1']['batch_size'], outdir=model_dirs['STEP1'])
 
 
 ######################################################################
@@ -265,7 +284,7 @@ def unify_kijis(dataset):
     print 'STEP 2 start...'
     if dataset == None:
         print 'dataset load...'
-        dataset = Nikkei(dataset_type=params['experiment_type'], brandcode=params['STEP3']['brandcode'])
+        dataset = Nikkei(dataset_type=params['dataset_type'], brandcode=params['STEP3']['brandcode'])
     # model = load_model(model_dirs['STEP1'])
     index = T.lscalar()    # index to a [mini]batch
     x = T.matrix('x')  # the data is presented as rasterized images
@@ -287,8 +306,11 @@ def unify_kijis(dataset):
 
 def reguralize_data(dataset, brandcodes):
     idf = np.log(float(dataset.phase2['train']['x'].shape[0]) / dataset.phase2['train']['x'].sum(axis=0))
+    max_val = (dataset.phase2['train']['x'] - dataset.phase2['train']['x'].min(axis=0) + 0.001).max(axis=0)
+    min_val = dataset.phase2['train']['x'].min(axis=0)
     for datatype in ['train', 'valid', 'test']:
-        dataset.phase2[datatype]['x'] = (dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0)) / (dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0) + 0.001).max(axis=0)
+        dataset.phase2[datatype]['x'] = (dataset.phase2[datatype]['x'] - min_val) / max_val
+
         dataset.phase2[datatype]['x'] *= idf
         # dataset.phase2[datatype]['x'] = ((dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0)) ** 2) / ((dataset.phase2[datatype]['x'] - dataset.phase2[datatype]['x'].min(axis=0) + 0.001) ** 2).max(axis=0)
         for brandcode in brandcodes:
@@ -324,6 +346,18 @@ def pca(n_components=1000, train_x=None, test_x=None):
     test_x_pca = pca.transform(test_x)
     return train_x_pca, test_x_pca
 
+
+def brandprice_analysis(dataset, brandcodes=['0101'], label_type=1):
+    print 'start to load baseline dataset...'
+    dataset = cPickle.load(open(default_model_dir + '/STEP2/baseline_original'))
+    print 'start to unify stockprice...'
+    dataset.unify_stockprices(dataset=dataset.baseline, brandcodes=brandcodes, dataset_type=params['dataset_type'], label_type=label_type, y_type=get_y_type(label_type))
+    averages = []
+    for brandcode in brandcodes:
+        averages.append(float((dataset.phase2['test'][brandcode] > 0).sum()) / len(dataset.phase2['test'][brandcode]))
+    print np.array(averages).mean()
+    pdb.set_trace()
+
 def predict(dataset, model, brandcodes=['0101'], label_type=1, model_type=1):
     print 'STEP 3 start...'
     if dataset == None:
@@ -332,10 +366,10 @@ def predict(dataset, model, brandcodes=['0101'], label_type=1, model_type=1):
             print 'start to load baseline dataset...'
             dataset = cPickle.load(open(default_model_dir + '/STEP2/baseline_original'))
             print 'start to unify stockprice...'
-            if model_type == 7:
-                dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type, y_type=get_y_type(label_type), y_force_list=True)
+            if model_type in [7, 3]:
+                dataset.unify_stockprices(dataset=dataset.baseline, brandcodes=brandcodes, dataset_type=params['dataset_type'], label_type=label_type, y_type=get_y_type(label_type), y_force_list=True)
             else:
-                dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type, y_type=get_y_type(label_type))
+                dataset.unify_stockprices(dataset=dataset.baseline, brandcodes=brandcodes, dataset_type=params['dataset_type'], label_type=label_type, y_type=get_y_type(label_type))
         else:
             print 'start to load proposed dataset...'
             dataset = cPickle.load(open(model_dirs['STEP2']))
@@ -345,10 +379,10 @@ def predict(dataset, model, brandcodes=['0101'], label_type=1, model_type=1):
             else:
                 print 'start to unify stockprice (max pooling)...'
                 usedata = dataset.unified_max
-            if model_type == 7:
-                dataset.unify_stockprices(dataset=usedata, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type, y_type=get_y_type(label_type), y_force_list=True)
+            if model_type in [7, 3]:
+                dataset.unify_stockprices(dataset=usedata, brandcodes=brandcodes, dataset_type=params['dataset_type'], label_type=label_type, y_type=get_y_type(label_type), y_force_list=True)
             else:
-                dataset.unify_stockprices(dataset=usedata, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type, y_type=get_y_type(label_type))
+                dataset.unify_stockprices(dataset=usedata, brandcodes=brandcodes, dataset_type=params['dataset_type'], label_type=label_type, y_type=get_y_type(label_type))
     
     if params['experiment_type'] != 'baseline':
         reguralize_data(dataset, brandcodes)
@@ -357,38 +391,46 @@ def predict(dataset, model, brandcodes=['0101'], label_type=1, model_type=1):
 
     ###   Deep Learningによる予測
     if model_type < 7:
+        print 'recurrent : ' + str(params['STEP4']['recurrent'])
+        pretrain_params = {
+            'dataset' : dataset, 
+            'hidden_layers_sizes' : params['STEP4']['hidden_layers_sizes'],
+            'pretrain_lr' : params['STEP4']['pretrain']['learning_rate'],
+            'pretrain_batch_size' : params['STEP4']['pretrain']['batch_size'],
+            'pretrain_epochs' : params['STEP4']['pretrain']['epochs'],
+            'corruption_levels' : params['STEP4']['corruption_levels'],
+            'k' : params['STEP4']['k'],
+            'y_type' : get_y_type(label_type),
+            'hidden_recurrent': params['STEP4']['hidden_recurrent'],
+            'n_outs' : get_y_type(label_type) + 1,
+            'gbrbm' : params['experiment_type'] != 'baseline',
+            'recurrent' : params['STEP4']['recurrent'],
+            'dropout' : params['STEP4']['dropout'],
+            'activation_function' : params['activation_function']
+        }
+        finetune_params = {
+            'dataset' : dataset,
+            'model' : None,
+            'finetune_lr' : params['STEP4']['finetune']['learning_rate'],
+            'finetune_batch_size' : params['STEP4']['finetune']['batch_size'],
+            'finetune_epochs' : params['STEP4']['finetune']['epochs'],
+            'y_type' : get_y_type(label_type)
+        }
         while(1):
-            pretrain_params = {
-                'dataset' : dataset, 
-                'hidden_layers_sizes' : params['STEP4']['hidden_layers_sizes'],
-                'pretrain_lr' : params['STEP4']['pretrain']['learning_rate'],
-                'pretrain_batch_size' : params['STEP4']['pretrain']['batch_size'],
-                'pretrain_epochs' : params['STEP4']['pretrain']['epochs'],
-                'corruption_levels' : params['STEP4']['corruption_levels'],
-                'k' : params['STEP4']['k'],
-                'y_type' : get_y_type(label_type),
-                'n_outs' : get_y_type(label_type) + 1
-            }
-            pretrain_model = model.pretrain(pretrain_params)
-            pre_params = get_model_params(pretrain_model)
-
-            while(1):
-                try:
-                    finetune_params = {
-                        'dataset' : dataset,
-                        'model' : pretrain_model,
-                        'finetune_lr' : params['STEP4']['finetune']['learning_rate'],
-                        'finetune_batch_size' : params['STEP4']['finetune']['batch_size'],
-                        'finetune_epochs' : params['STEP4']['finetune']['epochs'],
-                        'y_type' : get_y_type(label_type)
-                    }
-                    finetune_model, best_validation_loss, test_score, best_epoch = model.finetune(finetune_params)
-                    pdb.set_trace()
-                    set_model_params(pretrain_model, pre_params)
-                except:
-                    break
-            pdb.set_trace()
-
+            try:
+                pretrain_model = model.pretrain(pretrain_params)
+                pre_params = get_model_params(pretrain_model)
+                while(1):
+                    try:
+                        finetune_params['model'] = pretrain_model
+                        finetune_model, best_validation_loss, test_score, best_epoch = model.finetune(finetune_params)
+                        pdb.set_trace()
+                        set_model_params(pretrain_model, pre_params)
+                    except KeyboardInterrupt:
+                        break
+                pdb.set_trace()
+            except KeyboardInterrupt:
+                pass
     elif model_type == 7:
         model.train_RNN_minibatch(dataset=dataset)
         
@@ -462,6 +504,7 @@ if __name__ == '__main__':
         params['STEP1']['reg_weight'] = float(sys.argv[3])
         params['STEP1']['batch_size'] = int(sys.argv[4])
         params['STEP1']['model'] = sys.argv[5]
+        params['dataset_type'] = sys.argv[6]
     else:
         print sys.argv
         print '引数が足りません．'
@@ -469,9 +512,9 @@ if __name__ == '__main__':
         sys.exit()
 
     model_dirs = {
-        'STEP1' : '%s/%s/h%d_lr%s_s%s_b%s.%s' % (default_model_dir, 'STEP1', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['batch_size']), params['STEP1']['model']),
-        'STEP2' : '%s/%s/h%d_lr%s_s%s_b%s.%s' % (default_model_dir, 'STEP2', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['batch_size']), params['STEP1']['model']),
-        'STEP3' : '%s/%s/h%d_lr%s_s%s_b%s.%s' % (default_model_dir, 'STEP3', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['batch_size']), params['STEP1']['model']),
+        'STEP1' : '%s/%s/h%d_lr%s_s%s_b%s_%s.%s' % (default_model_dir, 'STEP1', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['batch_size']), params['dataset_type'], params['STEP1']['model']),
+        'STEP2' : '%s/%s/h%d_lr%s_s%s_b%s_%s.%s' % (default_model_dir, 'STEP2', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['batch_size']), params['dataset_type'], params['STEP1']['model']),
+        'STEP3' : '%s/%s/h%d_lr%s_s%s_b%s_%s.%s' % (default_model_dir, 'STEP3', params['STEP1']['n_hidden'], str(params['STEP1']['learning_rate']), str(params['STEP1']['reg_weight']), str(params['STEP1']['batch_size']), params['dataset_type'], params['STEP1']['model']),
         # 'STEP4' : '%s/%s/%sh%d_lr%.2f_b%s.%s' % (default_model_dir, 'STEP4', params['STEP3']['brandcode'], params['STEP1']['n_hidden'], params['STEP1']['learning_rate'], str(params['STEP1']['reg_weight']), params['STEP1']['model']),
     }
     
@@ -519,6 +562,13 @@ if __name__ == '__main__':
         elif m == 2:
             print 'start DBN'
             model = DBN
+        elif m == 3:
+            print 'start SdA + RNN'
+            model = SdA
+            params['STEP4']['recurrent'] = True
+        elif m == 4:
+            print 'RNN-RBM + DBN'
+            model = RNNRBM_DBN
         elif m == 7:
             print 'start RNN'
             model = RNN
@@ -536,7 +586,11 @@ if __name__ == '__main__':
                 model = RandomForestClassifier
 
             model = RandomForestClassifier
-        brandcodes = ['0101', '7203', '6758', '6502', '7201', '6501', '6702', '6753', '8058', '8031', '7751']
+        # brandcodes = ['0101', '7203', '6758', '6502', '7201', '6501', '6702', '6753', '8058', '8031', '7751']
+        ALL_brandcodes = getNikkei225()
+        NG_brandcodes = ['2768', '3382', '3893', '4188', '4324', '4568', '4689', '4704', '5411', '6674', '8303', '8306', '8308', '8309', '8316', '8411', '8766', '8795', '9983', '6796', '9984', '6366', '2282', '7004', '7013', '9020', '9432']
+        brandcodes = list(set(ALL_brandcodes) - set(NG_brandcodes))
+        # brandprice_analysis(dataset, brandcodes=brandcodes, label_type=l)
         predict(dataset, model, brandcodes=brandcodes, label_type=l, model_type=m)
 
 

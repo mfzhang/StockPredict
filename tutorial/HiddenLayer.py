@@ -95,9 +95,9 @@ def _dropout_from_layer(rng, layer, p):
 
 class DropoutHiddenLayer(HiddenLayer):
     def __init__(self, rng, input, n_in, n_out,
-                 activation, W=None, b=None):
+                 activation, W=None, b=None, p=0.5):
         super(DropoutHiddenLayer, self).__init__(
                 rng=rng, input=input, n_in=n_in, n_out=n_out, W=W, b=b, activation=activation)
 
-        self.output = _dropout_from_layer(rng, self.output, p=0.5)
+        self.output = _dropout_from_layer(rng, self.output, p)
 
