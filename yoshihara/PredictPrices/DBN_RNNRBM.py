@@ -84,7 +84,7 @@ class RNNRBM_DBN(object):
                 
                 # Construct a denoising autoencoder that shared weights with this
                 # layer
-                if i==0:
+                if i== (self.n_layers - 1):
                     rnnrbm_layer = RnnRbm(n_visible=input_size,
                     input=layer_input, n_hidden=hidden_layers_sizes[i],
                     n_hidden_recurrent=hidden_recurrent,lr=0.001,y_type=y_type)
@@ -157,6 +157,24 @@ class RNNRBM_DBN(object):
 
         pretrain_fns = []
         pretrain_f_bh_t= []
+        for rbm in self.rbm_layers:
+
+            # get the cost and the updates list
+            # using CD-k here (persisent=None) for training each RBM.
+            # TODO: change cost function to reconstruction error
+            cost, updates = rbm.get_cost_updates(learning_rate,
+                                                 persistent=None, k=k)
+
+            # compile the theano function
+            fn = theano.function(inputs=[index,
+                            theano.Param(learning_rate, default=0.1)],
+                                 outputs=cost,
+                                 updates=updates,
+                                 givens={self.x:
+                                    train_set_x[batch_begin:batch_end]})
+            # append `fn` to the list of functions
+            pretrain_fns.append(fn)
+        
         for rnnrbm in self.rnnrbm_layers:
 
             # get the cost and the updates list
@@ -179,23 +197,6 @@ class RNNRBM_DBN(object):
             pretrain_fns.append(fn)
             pretrain_f_bh_t.append(f_bh_t)
 
-        for rbm in self.rbm_layers:
-
-            # get the cost and the updates list
-            # using CD-k here (persisent=None) for training each RBM.
-            # TODO: change cost function to reconstruction error
-            cost, updates = rbm.get_cost_updates(learning_rate,
-                                                 persistent=None, k=k)
-
-            # compile the theano function
-            fn = theano.function(inputs=[index,
-                            theano.Param(learning_rate, default=0.1)],
-                                 outputs=cost,
-                                 updates=updates,
-                                 givens={self.x:
-                                    train_set_x[batch_begin:batch_end]})
-            # append `fn` to the list of functions
-            pretrain_fns.append(fn)
 
         return pretrain_fns,pretrain_f_bh_t
      
@@ -316,8 +317,8 @@ def pretrain(pretrain_params, y_type):
             for batch_index in xrange(n_train_batches):
                 c.append(pretraining_fns[i](index=batch_index,
                                             lr=pretrain_lr))
-                if i==0:
-                    b.append(pretraining_f_bh_t[i](index=batch_index))
+                if i==(model.n_layers -1):
+                    b.append(pretraining_f_bh_t[0](index=batch_index))
             msg = 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, numpy.mean(c))
             sys.stdout.write("\r%s" % msg)
             sys.stdout.flush()

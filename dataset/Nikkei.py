@@ -111,6 +111,17 @@ class Nikkei():
         count_zero = 0
         count_one = 0
         count_two = 0
+        """
+	self.years['train'] = [1999, 2000, 2001, 2002, 2003, 2004, 2005]
+        self.years['valid'] = [2006]
+        self.years['test'] = [2007, 2008]
+        """
+	"""
+	print "change years........."	
+        self.years['train'] = [1999, 2000, 2001, 2002, 2003, 2004]
+        self.years['valid'] = [2005, 2006]
+        self.years['test'] = [2007, 2008]
+        """
         self.pricelist = cPickle.load(open(pricelistdir))
         for datatype in ['train', 'valid', 'test']:
             for year in self.years[datatype]:

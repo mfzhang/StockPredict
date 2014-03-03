@@ -2,6 +2,11 @@
 
 import cPickle, json, pdb, pickle, theano, sys, numpy, time, os
 import sklearn.decomposition
+from sklearn.svm import SVR
+from sklearn.svm import SVC 
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.decomposition import PCA
+from sklearn.grid_search import GridSearchCV
 import os.path
 import copy
 import theano.tensor as T
@@ -19,7 +24,10 @@ from yoshihara.PredictPrices import DBN
 
 from experiment.PredictPrices.RNN import train_RNN, train_RNN_hf, train_RNN_minibatch
 import curses
-
+import warnings
+warnings.filterwarnings("ignore")
+import locale
+locale.setlocale(locale.LC_ALL, "")
 
 
 default_model_dir = 'experiment/Model'
@@ -33,7 +41,7 @@ default_model_dir = 'experiment/Model'
 dataset_type = 'test' # ['all' / 'chi2_selected']
 
 params = {
-    'experiment_type' : 'baseline',
+    'experiment_type' : 'baseline',#chi2_selected or baseline
     'STEP1' : {
         'beta' : 1.,
         'model' : 'sae',
@@ -46,20 +54,20 @@ params = {
     'STEP4' : {
         'model' : 'sda',
         'corruption_levels' : [.3, .3, .3],
-        'hidden_recurrent' : 10,
+        'hidden_recurrent' : 1250,
         'k' : 1,
-        'hidden_layers_sizes' : [2500, 2500],
+        'hidden_layers_sizes' : [2500],
         'pretrain' : {
-            'batch_size' : 50,
-            'learning_rate' : 0.05,
-            'epochs' : 100
+            'batch_size' : 30,
+            'learning_rate' : 0.001,
+            'epochs' :200 
         },
         'finetune' : {
-            'batch_size' : 50,
-            'learning_rate' : 0.0001,
-            'epochs' : 200
+            'batch_size' : 30,
+            'learning_rate' : 0.01,
+            'epochs' :200
         }
-    }
+}
 }
 
 
@@ -152,7 +160,7 @@ def msg_loop(stdscr):
             msg = '**  ' + initial_msg[x] + '\n'
             msg += '**  ' + labeltype_msg[l] + '\n\n'
             msg += '以下から予測モデルに利用するモデルを選択して下さい．\n'
-            msg += '1: SdA_regression, 2: DBN_regression, 3: SdA_RNN, 4:RNNRBM_MLP, 5:RNNRBM_DBN\n'
+            msg += '0:SVC 1: SdA_regression, 2: DBN_regression, 3: SdA_RNN, 4:RNNRBM_MLP, 5:RNNRBM_DBN\n'
             stdscr.addstr(msg)
             m = int(stdscr.getstr())
             curses.flushinp()
@@ -258,21 +266,74 @@ def set_model_params(model, params):
     return model
 
 
-def predict(dataset, model, brandcodes=['0101'], label_type=1, y_type=1):
+def predict(dataset, model, brandcodes=['0101'], label_type=1, y_type=1,model_type=2):
     print 'STEP 3 start...'
     if dataset == None:
         if params['experiment_type'] == 'baseline':
             print 'start to load baseline dataset...'
             dataset = cPickle.load(open(default_model_dir + '/STEP2/baseline_original'))
+        elif params['experiment_type'] == 'chi2_selected':
+            print 'start to load chi2_selected...'
+            dataset = Nikkei() 
         else:
             print 'start to load proposed dataset...'
             dataset = cPickle.load(open(model_dirs['STEP2']))
     print 'start to unify stockprice...'
     # dataset.unify_stockprices(dataset=dataset.unified, brandcodes=brandcodes, dataset_type=params['experiment_type'], label_type=label_type)
-    dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes,
+    if params['experiment_type'] != 'chi2_selected': 
+        dataset.unify_stockprices(dataset=dataset.baseline_original, brandcodes=brandcodes,
                                 dataset_type=params['experiment_type'],label_type=label_type)
+    else:
+        dataset.unify_stockprices(dataset = dataset.raw_data[brandcodes[0]],brandcodes=brandcodes,label_type = label_type)
     reguralize_data(dataset, brandcodes)
-    change_brand(dataset, '0101')
+    change_brand(dataset, brandcodes[0])
+    
+    if model_type == 0:
+        def transformY(data_y):
+            y = []
+            if label_type < 3:
+                for data in data_y:
+                    y.append(data[0])
+                return numpy.array(y)
+            else :
+                for data in data_y:
+                    y.append(data)
+                return numpy.array(y)
+        train_x = dataset.phase2['train']['x']
+        train_x = numpy.append(train_x, dataset.phase2['valid']['x'], 0)
+        test_x = dataset.phase2['test']['x']
+        while(1):
+
+            if params['experiment_type'] == 'baseline':
+                train_x_original = train_x
+                test_x_original = test_x
+                pca = PCA(n_components=1000)
+                pca.fit(train_x_original)
+                train_x = pca.transform(train_x_original)
+                test_x = pca.transform(test_x_original)
+
+            train_y = transformY(dataset.phase2['train']['y'])
+            train_y = numpy.append(train_y, transformY(dataset.phase2['valid']['y']), 0)
+            test_y = transformY(dataset.phase2['test']['y'])
+
+
+            if label_type < 3:
+                tuned_parameters = [{'kernel': ['rbf'], 'gamma': [10**i for i in range(-4,0)], 'C': [10**i for i in range(0,4)]}]
+                gscv = GridSearchCV(SVR(), tuned_parameters, cv=5, scoring="mean_squared_error", n_jobs=10)
+            else:
+                print 'classification'
+                tuned_parameters = [{'kernel': ['rbf', 'linear'], 'gamma': [10**i for i in range(-4,0)],'C': [10**i for i in range(0,4)]}]
+                gscv = GridSearchCV(SVC(), tuned_parameters, cv=5, n_jobs=10)
+                gscv.fit(train_x, train_y)
+                best_model = gscv.best_estimator_
+            predict_y = best_model.predict(test_x)
+            result_train = (best_model.predict(train_x) == train_y).sum()
+            result_test = (best_model.predict(test_x) == test_y).sum()
+            print 'training accuracy : %.2f , %d / %d' % (float(result_train) / len(train_y), result_train, len(train_y))
+            print 'testing accuracy : %.2f , %d / %d' % (float(result_test) / len(test_y), result_test, len(test_y))     
+            pdb.set_trace()    
+    
+    
     pretrain_params = {
         'dataset' : dataset, 
         'hidden_layers_sizes' : params['STEP4']['hidden_layers_sizes'],
@@ -367,16 +428,20 @@ if __name__ == '__main__':
             print 'start SdA_regression'
             model = SdA_regression
         elif m == 2:
-            print 'start DBN_regression'
-            model = DBN_regression
+            print 'start DBN'
+            model = DBN
         elif m == 4:
             print 'start RNNRBM_MLP'
             model = RNNRBM_MLP
         elif m == 5:
             print 'start RNNRBM_DBN'
             model = RNNRBM_DBN
-        brandcodes = ['0101', '7203', '6758', '6502', '7201', '6501', '6702', '6753', '8058', '8031', '7751']
-        predict(dataset, model, brandcodes=brandcodes, label_type=l, y_type=int(l > 2))
+        elif m == 0:
+            print 'start SVC'
+            model = SVC
+        brandcodes = ['8058','0101', '7203', '6758', '6502', '7201', '6501', '6702', '6753', '8031', '7751']
+        #brandcodes = ['0101', '7203', '6758', '6502', '7201', '6501', '6702', '6753', '8058', '8031', '7751']
+        predict(dataset, model, brandcodes=brandcodes, label_type=l, y_type=int(l > 2),model_type=m)
 
 
 
