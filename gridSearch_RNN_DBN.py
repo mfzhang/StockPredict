@@ -22,6 +22,7 @@ from yoshihara.PredictPrices import RNNRBM_MLP
 from yoshihara.PredictPrices import RNNRBM_DBN 
 from yoshihara.PredictPrices import DBN_RNNRBM 
 from yoshihara.PredictPrices import DBN
+from yoshihara.PredictPrices import stacked_RNNRBM 
 
 from experiment.PredictPrices.RNN import train_RNN, train_RNN_hf, train_RNN_minibatch
 import curses
@@ -378,6 +379,7 @@ def predict(dataset, model, brandcodes=['0101'], label_type=1, y_type=1, m=1):
     model_dirs['STEP4_logs'] = '%s/%s/%s_%d_%s.csv' % (default_model_dir,yoshihara_dir,type, label_type, model_type)
     all_size = len(params['STEP4']['hidden_recurrent']) * len(params['STEP4']['hidden_layers_sizes']) * len(params['STEP4']['pretrain']['batch_size']) * len(params['STEP4']['pretrain']['learning_rate']) * len(params['STEP4']['pretrain']['epochs']) * len(params['STEP4']['finetune']['batch_size']) * len(params['STEP4']['finetune']['learning_rate']) * len(params['STEP4']['finetune']['epochs'])
     i = 0
+      
     for hidden_layers_sizes in params['STEP4']['hidden_layers_sizes']:
         for batch_size_pretrain in params['STEP4']['pretrain']['batch_size']:
             for learning_rate_pretrain in params['STEP4']['pretrain']['learning_rate']:

@@ -45,7 +45,7 @@ params = {
     'STEP1' : {
         'beta' : 1.,
         'model' : 'sae',
-        'n_hidden' : 1000,
+        'n_hidden' : 5000,
         'learning_rate' : 0.05
     },
     'STEP3' : {
@@ -429,7 +429,6 @@ if __name__ == '__main__':
             model = SdA_regression
         elif m == 2:
             print 'start DBN'
-            model = DBN
         elif m == 4:
             print 'start RNNRBM_MLP'
             model = RNNRBM_MLP
