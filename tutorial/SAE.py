@@ -13,14 +13,14 @@ from theano.tensor.shared_randomstreams import RandomStreams
 
 # import my library
 #from XOR import XOR
-from dataset.Nikkei import Nikkei
+# from dataset.Nikkei import Nikkei
 
 # outdir = '/home/fujikawa/StockPredict/src/deeplearning/experiment/Model/sae.pkl'
 
 class SparseAutoencoder(object):
     
 
-    def __init__(self, input=None, n_visible=784, n_hidden=500, sp_penalty=0.03, p=0.02, beta=0., reg_weight=0.001,
+    def __init__(self, input=None, n_visible=784, n_hidden=500, reg_weight=0.,
                  W=None, bhid=None, bvis=None, params = None, corruption_level=0):
         """
         Initialize the dA class by specifying the number of visible units (the
@@ -77,9 +77,6 @@ class SparseAutoencoder(object):
             self.n_visible = params['n_visible']
             self.n_hidden = params['n_hidden']
             self.reg_weight = params['reg_weight']
-            self.p = params['p']
-            self.sp_penalty = params['sp_penalty']
-            self.beta = params['beta']
             self.epoch = params['epoch']
             theano_rng = params['theano_rng']
             self.corruption_level = params['corruption_level']
@@ -88,9 +85,6 @@ class SparseAutoencoder(object):
             self.n_visible = n_visible
             self.n_hidden = n_hidden
             self.reg_weight = reg_weight
-            self.p = p
-            self.sp_penalty = sp_penalty
-            self.beta = beta
             self.epoch = 0
             theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
             self.corruption_level = corruption_level
@@ -151,7 +145,6 @@ class SparseAutoencoder(object):
         matrix_meanpool = T.matrix()
         self.get_maxpool = theano.function([matrix_maxpool], T.max(self.get_hidden_values(matrix_maxpool), axis=0))
         self.get_meanpool = theano.function([matrix_meanpool], T.mean(self.get_hidden_values(matrix_meanpool), axis=0))
-
     def get_corrupted_input(self, input, corruption_level):
         """This function keeps ``1-corruption_level`` entries of the inputs the
         same and zero-out randomly selected subset of size ``coruption_level``
@@ -205,8 +198,8 @@ class SparseAutoencoder(object):
 
         l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
         
-        cost += 1e-2 * l2_w
-        cost += l2_h
+        cost += l2_w
+        # cost += l2_h
 
         # compute the gradients of the cost of the `dA` with respect
         # to its parameters
@@ -218,33 +211,7 @@ class SparseAutoencoder(object):
 
         return (cost, updates)
 
-    def get_cost_updates2(self, corruption_level, learning_rate, pre_model):
-        """ This function computes the cost and the updates for one trainng
-        step of the dA """
-        input2 = pre_model.get_propup_matrix(self.input)
-        tilde_x = self.get_corrupted_input(self.input, corruption_level)
-        y = self.get_hidden_values(tilde_x)
-        z = self.get_reconstructed_input(y)
-
-        L = - T.sum(self.input * T.log(z) + (1 - self.input) * T.log(1 - z), axis=1)
-
-        cost = T.mean(L)
-
-        l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
-        
-        cost += 1e-2 * l2_w
-        cost += l2_h
-
-        # compute the gradients of the cost of the `dA` with respect
-        # to its parameters
-        gparams = T.grad(cost, self.params)
-        # generate the list of updates
-        updates =  []
-        for param, gparam in zip(self.params, gparams):
-            updates.append((param, param - learning_rate * gparam))
-
-        return (cost, updates)
-
+    
 
     def get_norm_penalty(self, x, isUpdate=True):
 
@@ -283,9 +250,6 @@ class SparseAutoencoder(object):
             'n_visible' : self.n_visible,
             'n_hidden' : self.n_hidden,
             'reg_weight' : self.reg_weight,
-            'p' : self.p,
-            'sp_penalty' : self.sp_penalty,
-            'beta' : self.beta,
             'epoch' : self.epoch,
             'theano_rng' : self.theano_rng,
             'corruption_level' : self.corruption_level
@@ -297,9 +261,6 @@ class SparseAutoencoder(object):
         # self.n_visible = n_visible
         # self.n_hidden = n_hidden
         # self.reg_weight = reg_weight
-        # self.p = p
-        # self.sp_penalty = sp_penalty
-        # self.beta = beta
         # self.epoch = 0
         # self.W = W
         # self.b = bhid
@@ -537,11 +498,12 @@ def train_sae2(input=None, model=None, pre_model=None, dataset=None, learning_ra
 
 
 if __name__ == '__main__':
+    pass
 
-    dataset = Nikkei()
-    index = T.lscalar()    # index to a [mini]batch
-    x = T.matrix('x')  # the data is presented as rasterized images
-    model = SparseAutoencoder(input=x, n_visible=dataset.phase1_input_size, n_hidden=100)
-    train_sae(model=model, dataset=dataset,learning_rate=0.01)
+    # dataset = Nikkei()
+    # index = T.lscalar()    # index to a [mini]batch
+    # x = T.matrix('x')  # the data is presented as rasterized images
+    # model = SparseAutoencoder(input=x, n_visible=dataset.phase1_input_size, n_hidden=100)
+    # train_sae(model=model, dataset=dataset,learning_rate=0.01)
 
 

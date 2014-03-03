@@ -78,3 +78,24 @@ class HiddenLayer(object):
                        else activation(lin_output))
         # parameters of the model
         self.params = [self.W, self.b]
+
+def _dropout_from_layer(rng, layer, p):
+    """p is the probablity of dropping a unit
+    """
+    srng = theano.tensor.shared_randomstreams.RandomStreams(
+            rng.randint(999999))
+    # p=1-p because 1's indicate keep and p is prob of dropping
+    mask = srng.binomial(n=1, p=1-p, size=layer.shape)
+    # The cast is important because
+    # int * float32 = float64 which pulls things off the gpu
+    output = layer * T.cast(mask, theano.config.floatX)
+    return output
+
+class DropoutHiddenLayer(HiddenLayer):
+    def __init__(self, rng, input, n_in, n_out,
+                 activation, W=None, b=None, p=0.5):
+        super(DropoutHiddenLayer, self).__init__(
+                rng=rng, input=input, n_in=n_in, n_out=n_out, W=W, b=b, activation=activation)
+
+        self.output = _dropout_from_layer(rng, self.output, p)
+

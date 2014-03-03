@@ -12,7 +12,8 @@ from theano.tensor.shared_randomstreams import RandomStreams
 sys.path.extend(['/home/fujikawa/lib/python/other/pylearn2/pylearn2', '/home/fujikawa/StockPredict/src/deeplearning/dataset'])
 
 # import my library
-from dataset.Nikkei import Nikkei
+from XOR import XOR
+from Nikkei import Nikkei
 
 # activate_function = T.nnet.sigmoid
 
@@ -35,9 +36,6 @@ class RBM(object):
         if params != None:
             if 'beta' in params:
                 self.reg_weight = params['beta']
-            if 'activate_function' in params:
-                print 'load activate_function'
-                self.activate_function = params['activate_function']
             if 'corruption_level' in params:
                 print 'load corruption_level'
                 self.corruption_level = params['corruption_level']
@@ -102,12 +100,17 @@ class RBM(object):
         self.get_propup_vector = theano.function([vector], self.propup(vector)[1])
         self.get_propup_matrix = theano.function([matrix], self.propup(matrix)[1])
         matrix_maxpool = T.matrix()
+        matrix_meanpool = T.matrix()
         self.get_maxpool = theano.function([matrix_maxpool], T.max(self.propup(matrix_maxpool)[1], axis=0))
+        self.get_meanpool = theano.function([matrix_meanpool], T.mean(self.propup(matrix_meanpool)[1], axis=0))
+
         # self.get_maxpool = numpy.max(self.get_propup_matrix, axis=0)
     def activate_function(self, arg):
         
         def num(n):
             return T.cast(n, dtype=theano.config.floatX)
+            
+        # return lambda x: T.maximum(0.0, x)
         
         return T.nnet.sigmoid(arg)
         return num(0.99999) * T.tanh(arg + T.cast(0.0001, dtype=theano.config.floatX))
@@ -233,8 +236,8 @@ class RBM(object):
         l2_w, l2_h = self.get_norm_penalty(self.input, isUpdate=True)
         cost = T.mean(self.free_energy(self.input)) - T.mean(self.free_energy(chain_end))
         
-        # cost += l2_w
-        cost += l2_h
+        cost += l2_w
+        # cost += l2_h
         # We must not compute the gradient through the gibbs sampling
         gparams = T.grad(cost, self.params, consider_constant=[chain_end])
 
@@ -355,7 +358,7 @@ class RBM(object):
                                          dtype=theano.config.floatX) * input
 
 
-def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=200,
+def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training_epochs=15, batch_size=50,
              n_chains=1, n_samples=10, outdir='', k=1):
     """
     Demonstrate how to train and afterwards sample from it using Theano.
@@ -459,7 +462,7 @@ def train_rbm(input=None, model=None, dataset=None, learning_rate=1e-2, training
                     msg = '%s e: %d, b: %d, c: %.2f, '% (str(datetime.datetime.now().strftime("%m/%d %H:%M")), epoch, batch_index, numpy.mean(mean_cost))
 
                     
-                    if batch_index % 10 == 0:
+                    if batch_index % 10000 == 0:
                         # l2_w, l2_h = model.get_norm_penalty(x_example, isUpdate=False)
                         test_propup = model.get_propup_matrix(x_example)
                         # msg += 'l2_w: %.2f, l2_h: %.2f, ' % (float(l2_w.eval()), float(l2_h.eval()))

@@ -1,0 +1,574 @@
+"""
+"""
+import cPickle
+import gzip
+import os
+import sys
+import time
+import pdb
+import numpy
+
+import theano
+import theano.tensor as T
+from theano.tensor.shared_randomstreams import RandomStreams
+
+sys.path.append('../../tutorial')
+
+from tutorial.LogisticRegression import LogisticRegression
+from tutorial.HiddenLayer import HiddenLayer, DropoutHiddenLayer, _dropout_from_layer
+from tutorial.rbm import RBM
+from theano.ifelse import ifelse
+
+
+class DBN(object):
+    """Deep Belief Network
+
+    A deep belief network is obtained by stacking several RBMs on top of each
+    other. The hidden layer of the RBM at layer `i` becomes the input of the
+    RBM at layer `i+1`. The first layer RBM gets as input the input of the
+    network, and the hidden layer of the last RBM represents the output. When
+    used for classification, the DBN is treated as a MLP, by adding a logistic
+    regression layer on top.
+    """
+
+    def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
+                 hidden_layers_sizes=[500, 500], n_outs=1, y_type=1, gbrbm=False, dropout=False, activation_function=None):
+        """This class is made to support a variable number of layers.
+
+        :type numpy_rng: numpy.random.RandomState
+        :param numpy_rng: numpy random number generator used to draw initial
+                    weights
+
+        :type theano_rng: theano.tensor.shared_randomstreams.RandomStreams
+        :param theano_rng: Theano random generator; if None is given one is
+                           generated based on a seed drawn from `rng`
+
+        :type n_ins: int
+        :param n_ins: dimension of the input to the DBN
+
+        :type n_layers_sizes: list of ints
+        :param n_layers_sizes: intermediate layers size, must contain
+                               at least one value
+
+        :type n_outs: int
+        :param n_outs: dimension of the output of the network
+        """
+
+        self.dropout = dropout
+        self.sigmoid_layers = []
+        self.dropout_layers = []
+        self.rbm_layers = []
+        self.params = []
+        self.n_layers = len(hidden_layers_sizes)
+
+        rectified_linear_activation = lambda x: T.maximum(0.0, x)
+        # activation_function = T.nnet.sigmoid
+        if not activation_function:
+            print 'Sigmoid'
+            self.activation_function = T.nnet.sigmoid
+        else:
+            if activation_function == 'ReLU':
+                print 'ReLU'
+                self.activation_function = rectified_linear_activation
+            else:
+                print 'Sigmoid'
+                self.activation_function = T.nnet.sigmoid
+
+        assert self.n_layers > 0
+
+        if not theano_rng:
+            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
+
+        # allocate symbolic variables for the data
+        self.x = T.matrix('x')  # the data is presented as rasterized images
+        if y_type==0:
+            self.y = T.matrix('y')  # the labels are presented as 1D vector
+        else: 
+            self.y = T.ivector('y')  # the labels are presented as 1D vector
+                                 # of [int] labels
+
+        # The DBN is an MLP, for which all weights of intermediate
+        # layers are shared with a different RBM.  We will first
+        # construct the DBN as a deep multilayer perceptron, and when
+        # constructing each sigmoidal layer we also construct an RBM
+        # that shares weights with that layer. During pretraining we
+        # will train these RBMs (which will lead to chainging the
+        # weights of the MLP as well) During finetuning we will finish
+        # training the DBN by doing stochastic gradient descent on the
+        # MLP.
+
+        for i in xrange(self.n_layers):
+            # construct the sigmoidal layer
+
+            # the size of the input is either the number of hidden
+            # units of the layer below or the input size if we are on
+            # the first layer
+            if i == 0:
+                input_size = n_ins
+            else:
+                input_size = hidden_layers_sizes[i - 1]
+
+            # the input to this layer is either the activation of the
+            # hidden layer below or the input of the DBN if you are on
+            # the first layer
+            if i == 0:
+                layer_input = self.x
+                if dropout:
+                    dropout_layer_input = _dropout_from_layer(numpy_rng, self.x, p=0.2)
+            else:
+                layer_input = self.sigmoid_layers[-1].output
+                if dropout:
+                    dropout_layer_input = self.dropout_layers[-1].output
+            if dropout:
+                print 'Dropout'
+                dropout_layer = DropoutHiddenLayer(rng=numpy_rng,
+                                                    input=dropout_layer_input,
+                                                    n_in=input_size,
+                                                    n_out=hidden_layers_sizes[i],
+                                                    activation=self.activation_function,
+                                                    )
+                sigmoid_layer = HiddenLayer(rng=numpy_rng,
+                                            input=layer_input,
+                                            n_in=input_size,
+                                            n_out=hidden_layers_sizes[i],
+                                            activation=self.activation_function,
+                                            W=dropout_layer.W * (0.8 if i == 0 else 0.5),
+                                            b=dropout_layer.b
+                                            )
+                self.dropout_layers.append(dropout_layer)
+                self.params.extend(dropout_layer.params)
+
+            else:
+                sigmoid_layer = HiddenLayer(rng=numpy_rng,
+                                            input=layer_input,
+                                            n_in=input_size,
+                                            n_out=hidden_layers_sizes[i],
+                                            activation=T.nnet.sigmoid)
+                self.params.extend(sigmoid_layer.params)
+
+            # add the layer to our list of layers
+            self.sigmoid_layers.append(sigmoid_layer)
+            
+
+            # Construct an RBM that shared weights with this layer
+            if dropout:
+                layer = dropout_layer
+            else:
+                layer = sigmoid_layer
+
+            rbm_layer = RBM(numpy_rng=numpy_rng,
+                            theano_rng=theano_rng,
+                            input=layer_input,
+                            n_visible=input_size,
+                            n_hidden=hidden_layers_sizes[i],
+                            W=layer.W,
+                            hbias=layer.b,
+                            y_type=y_type,
+                            gbrbm=gbrbm
+                            )
+
+            self.rbm_layers.append(rbm_layer)
+        if dropout:
+            self.dropout_output_layer = LogisticRegression(
+                input=self.dropout_layers[-1].output,
+                n_in=hidden_layers_sizes[-1],
+                n_out=n_outs, y_type=y_type)
+
+            self.logLayer = LogisticRegression(
+                input=self.sigmoid_layers[-1].output,
+                n_in=hidden_layers_sizes[-1],
+                n_out=n_outs, y_type=y_type,
+                W=self.dropout_output_layer.W * 0.5,
+                b=self.dropout_output_layer.b)
+        else:
+            self.logLayer = LogisticRegression(
+                input=self.sigmoid_layers[-1].output,
+                n_in=hidden_layers_sizes[-1],
+                n_out=n_outs, y_type=y_type)
+            
+        self.get_prediction = theano.function(
+	    inputs = [self.x],
+	    outputs = [self.logLayer.y_pred]
+	    )
+        self.get_py = theano.function(
+        inputs = [self.x],
+        outputs = [self.logLayer.p_y_given_x]
+        )
+
+        if dropout:
+            self.get_prediction_dropout = theano.function(
+            inputs = [self.x],
+            outputs = [self.dropout_output_layer.y_pred]
+            )
+            self.get_py = theano.function(
+            inputs = [self.x],
+            outputs = [self.dropout_output_layer.p_y_given_x]
+            )
+        if dropout:
+            self.params.extend(self.dropout_output_layer.params)
+        else:
+            self.params.extend(self.logLayer.params)
+        
+
+        # compute the cost for second phase of training, defined as the
+        # negative log likelihood of the logistic regression (output) layer
+        #self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
+        if y_type == 0:
+            if dropout:
+                self.dropout_finetune_cost = self.dropout_output_layer.squared_error(self.y) 
+            self.finetune_cost = self.logLayer.squared_error(self.y)
+        else:
+            if dropout:
+                self.dropout_finetune_cost = self.dropout_output_layer.negative_log_likelihood(self.y) 
+            self.finetune_cost = self.logLayer.negative_log_likelihood(self.y) 
+
+        # compute the gradients with respect to the model parameters
+        # symbolic variable that points to the number of errors made on the
+        # minibatch given by self.x and self.y
+        if dropout:
+            self.dropout_errors = self.dropout_output_layer.errors(self.y)
+        self.errors = self.logLayer.errors(self.y)
+
+    def pretraining_functions(self, train_set_x, batch_size, k):
+        '''Generates a list of functions, for performing one step of
+        gradient descent at a given layer. The function will require
+        as input the minibatch index, and to train an RBM you just
+        need to iterate, calling the corresponding function on all
+        minibatch indexes.
+
+        :type train_set_x: theano.tensor.TensorType
+        :param train_set_x: Shared var. that contains all datapoints used
+                            for training the RBM
+        :type batch_size: int
+        :param batch_size: size of a [mini]batch
+        :param k: number of Gibbs steps to do in CD-k / PCD-k
+
+        '''
+
+        # index to a [mini]batch
+        index = T.lscalar('index')  # index to a minibatch
+        learning_rate = T.scalar('lr')  # learning rate to use
+
+        # number of batches
+        n_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
+        # begining of a batch, given `index`
+        batch_begin = index * batch_size
+        # ending of a batch given `index`
+        batch_end = batch_begin + batch_size
+
+        pretrain_fns = []
+        for rbm in self.rbm_layers:
+
+            # get the cost and the updates list
+            # using CD-k here (persisent=None) for training each RBM.
+            # TODO: change cost function to reconstruction error
+            cost, updates = rbm.get_cost_updates(learning_rate,
+                                                 persistent=None, k=k)
+
+            # compile the theano function
+            fn = theano.function(inputs=[index,
+                            theano.Param(learning_rate, default=0.1)],
+                                 outputs=cost,
+                                 updates=updates,
+                                 givens={self.x:
+                                    train_set_x[batch_begin:batch_end]})
+            # append `fn` to the list of functions
+            pretrain_fns.append(fn)
+
+        return pretrain_fns
+
+    def build_finetune_functions(self, dataset, batch_size, learning_rate, y_type):
+        '''Generates a function `train` that implements one step of
+        finetuning, a function `validate` that computes the error on a
+        batch from the validation set, and a function `test` that
+        computes the error on a batch from the testing set
+
+        :type datasets: list of pairs of theano.tensor.TensorType
+        :param datasets: It is a list that contain all the datasets;
+                        the has to contain three pairs, `train`,
+                        `valid`, `test` in this order, where each pair
+                        is formed of two Theano variables, one for the
+                        datapoints, the other for the labels
+        :type batch_size: int
+        :param batch_size: size of a minibatch
+        :type learning_rate: float
+        :param learning_rate: learning rate used during finetune stage
+
+        '''
+
+        train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
+        valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
+        test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
+        if not y_type==0:
+            train_set_y = T.cast(train_set_y,'int32') 
+            valid_set_y = T.cast(valid_set_y,'int32')
+            test_set_y = T.cast(test_set_y,'int32')
+
+        # compute number of minibatches for training, validation and testing
+        n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
+        n_valid_batches /= batch_size
+        n_test_batches = test_set_x.get_value(borrow=True).shape[0]
+        n_test_batches /= batch_size
+
+        index = T.lscalar('index')  # index to a [mini]batch
+        epoch = T.scalar()
+
+        # compute the gradients with respect to the model parameters
+        if self.dropout:
+            gparams = T.grad(self.dropout_finetune_cost, self.params)
+        else:
+            gparams = T.grad(self.finetune_cost, self.params)
+
+        ############################################################
+
+        gparams_mom = []
+        for param in self.params:
+            gparam_mom = theano.shared(numpy.zeros(param.get_value(borrow=True).shape, dtype=theano.config.floatX))
+            gparams_mom.append(gparam_mom)
+
+        mom = ifelse(epoch < 500,
+                0.5*(1. - epoch/500.) + 0.99*(epoch/500.),
+                0.99)
+
+        # Update the step direction using momentum
+        updates = {}
+        for gparam_mom, gparam in zip(gparams_mom, gparams):
+            updates[gparam_mom] = mom * gparam_mom + (1. - mom) * gparam
+
+        squared_filter_length_limit = 15.0
+
+
+        # ... and take a step along that direction
+        for param, gparam_mom in zip(self.params, gparams_mom):
+            stepped_param = param - learning_rate * updates[gparam_mom]
+
+            # This is a silly hack to constrain the norms of the rows of the weight
+            # matrices.  This just checks if there are two dimensions to the
+            # parameter and constrains it if so... maybe this is a bit silly but it
+            # should work for now.
+            if param.get_value(borrow=True).ndim == 2:
+                squared_norms = T.sum(stepped_param**2, axis=1).reshape((stepped_param.shape[0],1))
+                scale = T.clip(T.sqrt(squared_filter_length_limit / squared_norms), 0., 1.)
+                updates[param] = stepped_param * scale
+            else:
+                updates[param] = stepped_param
+
+        #########################################################
+
+        # compute list of fine-tuning updates
+        # updates = []
+        # for param, gparam in zip(self.params, gparams):
+        #     updates.append((param, param - gparam * learning_rate))
+
+        #########################################################
+
+        output = self.dropout_finetune_cost if self.dropout else self.finetune_cost
+        train_fn = theano.function(inputs=[epoch, index],
+              outputs=output,
+              updates=updates,
+              givens={self.x: train_set_x[index * batch_size:
+                                          (index + 1) * batch_size],
+                      self.y: train_set_y[index * batch_size:
+                                          (index + 1) * batch_size]},
+	                    name='train')
+
+        test_score_i = theano.function([index], self.errors,
+                 givens={self.x: test_set_x[index * batch_size:
+                                            (index + 1) * batch_size],
+                         self.y: test_set_y[index * batch_size:
+                                            (index + 1) * batch_size]},
+		                name='test')
+
+        valid_score_i = theano.function([index], self.errors,
+              givens={self.x: valid_set_x[index * batch_size:
+                                          (index + 1) * batch_size],
+                      self.y: valid_set_y[index * batch_size:
+                                          (index + 1) * batch_size]},
+		                name='valid')
+
+        # Create a function that scans the entire validation set
+        def valid_score():
+            return [valid_score_i(i) for i in xrange(n_valid_batches)]
+
+        # Create a function that scans the entire test set
+        def test_score():
+            return [test_score_i(i) for i in xrange(n_test_batches)]
+
+        return train_fn, valid_score, test_score
+
+
+def pretrain(pretrain_params):
+
+    ############################
+    ###  Setting parameters  ###
+    ############################
+
+    dataset = pretrain_params['dataset']
+    hidden_layers_sizes = pretrain_params['hidden_layers_sizes']
+    pretrain_lr = pretrain_params['pretrain_lr']
+    pretrain_batch_size = pretrain_params['pretrain_batch_size']
+    pretrain_epochs = pretrain_params['pretrain_epochs']
+    k = pretrain_params['k']
+    y_type = pretrain_params['y_type']
+    n_outs = pretrain_params['n_outs']
+    gbrbm = pretrain_params['gbrbm']
+    dropout = pretrain_params['dropout']
+    activation_function = pretrain_params['activation_function']
+    ############################
+    
+    train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
+    valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
+    test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
+    
+    if not y_type == 0:
+        train_set_y = T.cast(train_set_y,'int32') 
+        valid_set_y = T.cast(valid_set_y,'int32')
+        test_set_y = T.cast(test_set_y,'int32')
+    
+    # compute number of minibatches for training, validation and testing
+    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / pretrain_batch_size
+
+    # numpy random generator
+    numpy_rng = numpy.random.RandomState(123)
+    print '... building the model'
+    # construct the Deep Belief Network
+    model = DBN(numpy_rng=numpy_rng, n_ins=train_set_x.get_value().shape[1],
+              hidden_layers_sizes=hidden_layers_sizes,
+              n_outs=n_outs, y_type=y_type, gbrbm=gbrbm, dropout=dropout, activation_function=activation_function)
+
+    #########################
+    # PRETRAINING THE MODEL #
+    #########################
+    print '... getting the pretraining functions'
+    pretraining_fns = model.pretraining_functions(train_set_x=train_set_x,
+                                                batch_size=pretrain_batch_size,
+                                                k=k)
+
+    print '... pre-training the model'
+    start_time = time.clock()
+    ## Pre-train layer-wise
+    for i in xrange(model.n_layers):
+        # go through pretraining epochs
+        for epoch in xrange(pretrain_epochs):
+            # go through the training set
+            c = []
+            for batch_index in xrange(n_train_batches):
+                c.append(pretraining_fns[i](index=batch_index,
+                                            lr=pretrain_lr))
+            msg = 'Pre-training layer %i, epoch %d, cost %f' % (i, epoch, numpy.mean(c))
+            sys.stdout.write("\r%s" % msg)
+            sys.stdout.flush()
+        print
+
+    end_time = time.clock()
+    print >> sys.stderr, ('The pretraining code for file ' +
+                          os.path.split(__file__)[1] +
+                          ' ran for %.2fm' % ((end_time - start_time) / 60.))
+
+    train_set_x, train_set_y, valid_set_x, valid_set_y, test_set_x, test_set_y = "", "", "", "", "", ""
+    return model
+
+def finetune(finetune_params):
+
+    ############################
+    ###  Setting parameters  ###
+    ############################
+
+    dataset = finetune_params['dataset']
+    model = finetune_params['model']
+    finetune_lr = finetune_params['finetune_lr']
+    finetune_batch_size = finetune_params['finetune_batch_size']
+    finetune_epochs = finetune_params['finetune_epochs']
+    y_type = finetune_params['y_type']
+
+    ############################
+
+    train_set_x, train_set_y = theano.shared(dataset.phase2['train']['x']), theano.shared(dataset.phase2['train']['y'])
+    valid_set_x, valid_set_y = theano.shared(dataset.phase2['valid']['x']), theano.shared(dataset.phase2['valid']['y'])
+    test_set_x, test_set_y = theano.shared(dataset.phase2['test']['x']), theano.shared(dataset.phase2['test']['y'])
+
+    if not y_type==0 :
+        train_set_y = T.cast(train_set_y,'int32')
+        valid_set_y = T.cast(valid_set_y,'int32')
+        test_set_y = T.cast(test_set_y,'int32')
+    ########################
+    # FINETUNING THE MODEL #
+    ########################
+
+    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / finetune_batch_size
+    # get the training, validation and testing function for the model
+    print '... getting the finetuning functions'
+    train_fn, validate_model, test_model = model.build_finetune_functions(
+                dataset=dataset, batch_size=finetune_batch_size,
+                learning_rate=finetune_lr, y_type=y_type)
+
+    print '... finetunning the model'
+    # early-stopping parameters
+    patience = 100 * n_train_batches  # look as this many examples regardless
+    patience_increase = 20.    # wait this much longer when a new best is
+                              # found
+    improvement_threshold = 0.995  # a relative improvement of this much is
+                                   # considered significant
+    validation_frequency = min(n_train_batches, patience / 2)
+                                  # go through this many
+                                  # minibatche before checking the network
+                                  # on the validation set; in this case we
+                                  # check every epoch
+
+    best_params = None
+    best_validation_loss = numpy.inf
+    best_epoch = 0
+    test_score = 0.
+    start_time = time.clock()
+
+    done_looping = False
+    epoch = 0
+
+
+    while (epoch < finetune_epochs) and (not done_looping):
+        epoch = epoch + 1
+        for minibatch_index in xrange(n_train_batches):
+
+            minibatch_avg_cost = train_fn(epoch, minibatch_index)
+            iter = (epoch - 1) * n_train_batches + minibatch_index
+
+            if (iter + 1) % validation_frequency == 0:
+
+                validation_losses = validate_model()
+                this_validation_loss = numpy.mean(validation_losses)
+                msg = ('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                      (epoch, minibatch_index + 1, n_train_batches,
+                       this_validation_loss * 100.))
+                sys.stdout.write("\r%s" % msg)
+                sys.stdout.flush()
+                # if we got the best validation score until now
+                if this_validation_loss < best_validation_loss:
+                    best_epoch = epoch
+                    #improve patience if loss improvement is good enough
+                    if (this_validation_loss < best_validation_loss *
+                        improvement_threshold):
+                        patience = max(patience, iter * patience_increase)
+
+                    # save best validation score and iteration number
+                    best_validation_loss = this_validation_loss
+                    best_iter = iter
+
+                    # test it on the test set
+                    test_losses = test_model()
+                    test_score = numpy.mean(test_losses)
+                    print(('     epoch %i, minibatch %i/%i, test error of '
+                           'best model %f %%') %
+                          (epoch, minibatch_index + 1, n_train_batches,
+                           test_score * 100.))
+
+            if patience <= iter:
+                done_looping = True
+                break
+
+    print
+    print test_score
+    train_set_x, train_set_y, valid_set_x, valid_set_y, test_set_x, test_set_y = "", "", "", "", "", ""
+    return model, best_validation_loss, test_score, best_epoch
+
+if __name__ == '__main__':
+    pass
