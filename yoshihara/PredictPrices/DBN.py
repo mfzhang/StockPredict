@@ -31,7 +31,7 @@ class DBN(object):
     """
 
     def __init__(self, numpy_rng, theano_rng=None, n_ins=784,
-                 hidden_layers_sizes=[500, 500], n_outs=1, y_type=1):
+                 hidden_layers_sizes=[500, 500], n_outs=1, y_type=1,activation_function=None):
         """This class is made to support a variable number of layers.
 
         :type numpy_rng: numpy.random.RandomState
@@ -57,6 +57,8 @@ class DBN(object):
         self.rbm_layers = []
         self.params = []
         self.n_layers = len(hidden_layers_sizes)
+	
+
 
         assert self.n_layers > 0
 
@@ -82,6 +84,7 @@ class DBN(object):
         # MLP.
 
         for i in xrange(self.n_layers):
+            
             # construct the sigmoidal layer
 
             # the size of the input is either the number of hidden
@@ -100,12 +103,31 @@ class DBN(object):
             else:
                 layer_input = self.sigmoid_layers[-1].output
 
-            sigmoid_layer = HiddenLayer(rng=numpy_rng,
+            def maxout(z = None):
+                #g = theano.shared(numpy.zeros((hidden_layers_sizes[i],)),name='g',borrow=True)
+                g = T.max(z[0:5])
+                g = T.stack(g,T.max(z[5:10]))
+                for index in xrange(hidden_layers_sizes[i]-10):
+                    g = T.concatenate([g,[T.max(z[5*(index+2):5*(index+3)])]])
+		return g
+            
+            if activation_function == "maxout":
+                print "activation_funtion is maxout....."
+                self.activation_function = maxout
+ 		sigmoid_layer = HiddenLayer(rng=numpy_rng,
+                                        input=layer_input,
+                                        n_in=input_size,
+                                        n_out=5*hidden_layers_sizes[i],
+                                        activation=self.activation_function)
+            else :
+                print "activation_funtion is sigmoid....."
+                self.activation_function = T.nnet.sigmoid
+		sigmoid_layer = HiddenLayer(rng=numpy_rng,
                                         input=layer_input,
                                         n_in=input_size,
                                         n_out=hidden_layers_sizes[i],
-                                        activation=T.nnet.sigmoid)
-
+                                        activation=self.activation_function)
+	    
             # add the layer to our list of layers
             self.sigmoid_layers.append(sigmoid_layer)
 
@@ -313,10 +335,14 @@ def pretrain(pretrain_params, y_type):
     numpy_rng = numpy.random.RandomState(123)
     print '... building the model'
     # construct the Deep Belief Network
+    """
+    model = DBN(numpy_rng=numpy_rng, n_ins=train_set_x.get_value().shape[1],
+              hidden_layers_sizes=hidden_layers_sizes,
+              n_outs=n_outs, y_type=y_type,activation_function="maxout")
+    """
     model = DBN(numpy_rng=numpy_rng, n_ins=train_set_x.get_value().shape[1],
               hidden_layers_sizes=hidden_layers_sizes,
               n_outs=n_outs, y_type=y_type)
-
     #########################
     # PRETRAINING THE MODEL #
     #########################
@@ -384,7 +410,7 @@ def finetune(finetune_params, y_type):
 
     print '... finetunning the model'
     # early-stopping parameters
-    patience = 10 * n_train_batches  # look as this many examples regardless
+    patience = 30 * n_train_batches  # look as this many examples regardless
     patience_increase = 2.    # wait this much longer when a new best is
                               # found
     improvement_threshold = 0.995  # a relative improvement of this much is

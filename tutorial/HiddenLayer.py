@@ -79,8 +79,6 @@ class HiddenLayer(object):
         # parameters of the model
         self.params = [self.W, self.b]
 
-
-
 def _dropout_from_layer(rng, layer, p):
     """p is the probablity of dropping a unit
     """

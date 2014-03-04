@@ -90,17 +90,19 @@ class RnnRbm(object):
             bv_t = self.bv + T.dot(u_tm1, self.Wuv)
             bh_t = self.bh + T.dot(u_tm1, self.Wuh)
             generate = v_t is None
+        #k = 25
             if generate:
                 v_t, _, _, updates = self.build_rbm(T.zeros((n_visible,)), self.W, bv_t,
-                                               bh_t, k=25)
+                                               bh_t, k=5)
             u_t = T.tanh(self.bu + T.dot(v_t, self.Wvu) + T.dot(u_tm1, self.Wuu))
             return ([v_t, u_t], updates) if generate else [u_t, bv_t, bh_t]
         
         (u_t, bv_t, bh_t), updates_train = theano.scan(
             lambda v_t, u_tm1, *_: recurrence(v_t, u_tm1),
             sequences=self.v, outputs_info=[u0, None, None], non_sequences=self.params)
+        #k = 15
         v_sample, cost, monitor, updates_rbm = self.build_rbm(self.v, self.W, bv_t[:], bh_t[:],
-                                                         k=15)
+                                                         k=5)
         
         updates_bh_t = updates_train.copy()
 
